@@ -1,0 +1,113 @@
+# Análisis de Código: Bloque por Bloque para Defensa
+
+Este documento desgrana lo que hace verdaderamente cada línea / bloque clave de tu código. Al aprenderte esto, **la defensa será un paseo**, porque podrás responder el típico *"¿Y para qué sirve esta línea en la línea 24?"* de los evaluadores.
+
+---
+
+## 1. Archivo: `database/database.py`
+**Para qué sirve este archivo:** Configura el motor de hardware que conecta Python con el archivo físico de SQLite.
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+# 1. VARIABLE DE ENTORNO
+SQLALCHEMY_DATABASE_URL = "sqlite:///./secscan.db"
+```
+* **Qué hace el bloque:** Establece en qué lugar de tu disco duro vivirá la base de datos física. `sqlite:///./` solo significa "aquí en esta misma carpeta y en formato archivo".
+
+```python
+# 2. MOTOR (Conector SQL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+```
+* **Qué hace:** Enciende el conector de SQLAlchemy apuntando al archivo anterior.
+* **Línea clave (`check_same_thread: False`):** Es OBLIGATORIO en SQLite si usas FastAPI. Como FastAPI es Multi-Hilo (asíncrono), SQLite bloquea la base de datos si alguien distinto la consulta. Esto deshabilita ese bloqueo.
+
+```python
+# 3. FABRICANTE DE SESIONES
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+```
+* **Qué hace `SessionLocal`:** Crea minsesiones para leer/escribir. Cuando alguien consulta tu API, se abre una de estas sesiones, escribe, y luego se cierra por seguridad.
+* **Qué hace `Base`:** Prepara una "Clase Padre" vacía. Veremos que todos nuestros Modelos heredan de `Base` para decirle a Python "Oye, esto es una tabla de SQL".
+
+---
+
+## 2. Archivo: `database/models.py`
+**Para qué sirve este archivo:** Sustituye el escribir "CREATE TABLE" a mano en SQL. Al heredar de la clase `Base`, Python fabrica el código SQL de la base de datos automáticamente.
+
+```python
+# 1. LA TABLA SCANS
+class Scan(Base):
+    __tablename__ = "scans"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    fecha_inicio = Column(DateTime, default=datetime.datetime.utcnow)
+```
+* **Qué hace `__tablename__`:** Define el nombre real de la tabla en SQL.
+* **Qué hace `primary_key=True`:** Le avisa a SQLite que esta columna es el "Rut" o DNI del registro (un número autoincremental único).
+
+```python
+# 2. RELACIONES CON OTRAS TABLAS
+class Device(Base):
+    scan_id = Column(Integer, ForeignKey("scans.id"))
+    scan = relationship("Scan", back_populates="devices")
+```
+* **Qué hace `ForeignKey` (Llave Foránea):** Enlaza este Dispositivo al Escaneo de arriba. El profesor preguntará esto seguro.
+* **Qué hace `relationship`:** Es magia de Python. No crea columnas reales, solo nos deja codificar `mipc.scan` y automáticamente traer el escaneo atado a este dispositivo sin hacer un bloque pesado usando "SQL JOIN".
+
+---
+
+## 3. Archivo: `core/scanner.py`
+**Para qué sirve este archivo:** Es el "Controlador" de ciberseguridad. Engaña a Nmap desde código.
+
+```python
+class ScannerEngine:
+    def __init__(self):
+        self.nm = nmap.PortScanner(...)
+```
+* **Qué hace `__init__`:** Este bloque de "Inicialización" de la clase se dispara automáticamente cuando encendemos el servidor. Busca en tu computadora que tengas previamente instalado "Nmap.exe".
+
+```python
+    def scan_ports(self, ip_target: str) -> dict:
+        self.nm.scan(hosts=ip_target, arguments='-sV -F')
+```
+* **Qué hace `scan_ports`:** Este es el núcleo del proyecto.
+* **Línea `arguments='-sV -F'` (Garantizado que el profesor preguntará por los argumentos):**
+  * `-sV`: Service Version. Ataca los puertos abiertos intentando adivinar el nombre y versión del programa de fábrica corriendo ahí (vital para nuestro cruce posterior CVE).
+  * `-F`: Fast Scan. Le ordena buscar solo los 100 top puertos más famosos para no tardar horas en los 65.535 puertos de toda la red.
+
+---
+
+## 4. Archivo: `main.py`
+**Para qué sirve este archivo:** Es tu aplicación web. Recibe la URL del navegador web, dispara un escaneo con `scanner.py`, y lo archiva permanentemente con `models.py`.
+
+```python
+# 1. ACTIVACIÓN DE DB
+models.Base.metadata.create_all(bind=engine)
+app = FastAPI(...)
+scanner = ScannerEngine()
+```
+* **Qué hace `create_all`:** Fundamental. Chequea todas las tablas creadas en `models.py`. Si alguna no existe en el disco duro (`secscan.db`), él hace el `CREATE TABLE x...` invisiblemente. Si tú borras el `secscan.db` algún día, la API lo vuelve a crear solo.
+* **Qué hace `app / scanner`:** Enciende el mesero (API web) y el Chef (El Escáner Nmap en la memoria RAM).
+
+```python
+@app.post("/api/scan")
+def start_scan(request: ScanRequest, db: Session = Depends(get_db)):
+```
+* **Qué hace `@app.post`:** Le dice al sistema que al enviar peticiones contra `/api/scan`, vamos a insertar u ordenar acciones en la base de datos (POST, no GET).
+* **Qué hace `request: ScanRequest` (Pydantic):** Como buena práctica, no recibimos texto basura libre. Obligamos al navegador a mandarnos un objeto estricto JSON llamado "ScanRequest" asegurando que tenga el campo IP (ej: `"127.0.0.1"`). Todo validado al vuelo, evitando que intenten hackear o botar nuestra base de datos.
+* **Qué hace `db: Session = Depends(get_db)`:** Cuando entra la llamada a la ruta web, se abre la "puerta de la base de datos", y cuando FastAPI terminar de responder, la "puerta se cierra sola".
+
+```python
+# 3. EL CICLO DE PERSISTENCIA
+    db_scan = models.Scan(subred_objetivo=request.target_ip, estado="En Proceso")
+    db.add(db_scan)
+    db.commit()
+    db.refresh(db_scan)
+```
+* **Qué hace `models.Scan(...)`:** Fabrica un registro lógico de un escaneo de memoria.
+* **Qué hace `db.add` y `db.commit()`:** Guardado permanente. Equivalen a escribir a mano: `INSERT INTO scans (subred_objetivo, estado) VALUES ('127.0.0.1', 'En Proceso')`.
+* **Qué hace `db.refresh`:** Es un truco brillante. Le dice a la SQL: *"Como yo no escogí el ID de este registro, devuélvemelo de la base de datos para que en la próxima línea se lo amarremos a los Dispositivos Descubiertos"*.

@@ -1,0 +1,18 @@
+# Entornos Virtuales
+venv/
+env/
+.env
+
+# Compilados de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Bases de Datos Antiguas
+*.sqlite3
+*.db
+secscan.db
+
+# Credenciales críticas de Firebase (¡NUNCA SE SUBEN A GITHUB!)
+*credentials*
+firebase_admin.json

@@ -1,0 +1,52 @@
+# Guía Explicativa del Código (Defensa de Tesis)
+
+Aquí tienes el detalle funcional de cada archivo escrito hasta ahora. Esta guía está diseñada para que puedas explicar la arquitectura de tu plataforma a la comisión evaluadora con absoluta propiedad técnica.
+
+---
+
+## 1. `backend/main.py` (El Corazón de la API)
+
+> [!NOTE]
+> **Propósito:** Es el "Enrutador de Tráfico" de la aplicación web. Expone los servicios de backend para que el Frontend (React) pueda consumirlos en el futuro.
+
+**¿Qué hace a nivel de código?**
+1. **Instancia principal:** El código crea una variable `app = FastAPI(...)`. Esta es la aplicación web.
+2. **Creación de Base de Datos:** La instrucción `models.Base.metadata.create_all(bind=engine)` es vital. Le dice al sistema: *"Toma el diseño teórico de las tablas y, al iniciar el servidor, asegúrate de crear el archivo físico `secscan.db` si no existe"*.
+3. **Endpoints (Rutas):** Las partes que tienen un `@app.get("/")` se llaman "Decoradores de Rutas". Básicamente significan: *"Cuando un navegador visite esta URL (`/`), ejecuta la función de Python que está justo debajo y devuélvele este texto"*.
+
+---
+
+## 2. `backend/database/database.py` (El Conector)
+
+> [!NOTE]
+> **Propósito:** Separar de forma limpia la configuración de acceso a los datos. Si algún día la tesis requiere migrar toda la plataforma de SQLite a la nube (AWS RDS / PostgreSQL), **solo** deberás editar este archivo.
+
+**¿Qué hace a nivel de código?**
+1. **`create_engine`:** Es el motor de combustión. Abre la compuerta de acceso hacia el disco duro donde guarda la información de las IPs y vulnerabilidades.
+2. **`sessionmaker`:** El motor recibe muchas conexiones (ej: si dos personas ocupan SecScan al mismo tiempo). El `sessionmaker` fabrica "sesiones" temporales por cada transacción para que no se pisen entre ellas ni corrompan el archivo.
+
+---
+
+## 3. `backend/database/models.py` (El ORM - Object-Relational Mapping)
+
+> [!TIP]
+> **Punto clave para la presentación:** *"Decidimos usar ORM (SQLAlchemy) en lugar de lanzar consultas SQL estáticas para prevenir SQL Injection, mejorar la legibilidad del código y mantener las relaciones controladas sin tener que escribir JOINs a mano"*.
+
+**¿Qué hace a nivel de código?**
+1. Heredan de `Base`. Al crear `class Device(Base):`, Python automáticamente entiende que esto NO es una clase normal, es una "Tabla SQL".
+2. **Columnas:** Traduce variables de Python (`ip = Column(String)`) a comandos internos (`ip VARCHAR`).
+3. **Relaciones (Foreign Keys):** Cuando decimos `scan_id = Column(Integer, ForeignKey("scans.id"))`, vinculamos los computadores descubiertos a un único escaneo específico, asegurando así la integridad relacional y permitiendo la auditoría histórica.
+
+---
+
+## 4. `backend/core/scanner.py` (El Algoritmo de Ciberseguridad)
+
+> [!IMPORTANT]
+> **Propósito:** Esta clase actúa como un "Wrapper" (Envoltorio) sobre la herramienta de sistema (el `.exe` de Nmap). No programa el escaneo desde cero, lo subcontrata a Windows.
+
+**¿Qué hace a nivel de código?**
+1. **`__init__`:** Inicializa la librería. Intentará buscar instintivamente el archivo `.exe` en tu sistema operativo que acabamos de pedirte que instalaras.
+2. **`self.nm.scan(hosts, arguments='-sn')`:** Esta es la línea que hace toda la magia técnica real.
+   - Envía el comando `nmap -sn 127.0.0.1`.
+   - El parámetro `-sn` significa "Ping Sweep". Le ordena a Nmap: *"Verifica si la IP está viva enviándole un ping, pero te prohíbo terminantemente revisar us puertos (eso demoraría demasiado). Solo dime si vive o no"*.
+3. **Extracción de Diccionario:** Cuando el ejecutable de Nmap termina, te escupe un texto horrible y gigantesco. La librería `python-nmap` traduce ese reporte horrible y nos entrega una estructura ordenada tipo Diccionario (JSON), desde donde extraemos cómodamente si el "estado" es "Up" (vivo), su nombre de sistema y su MAC.
