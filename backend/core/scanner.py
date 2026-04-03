@@ -16,8 +16,8 @@ class ScannerEngine:
         """
         print(f"Iniciando descubrimiento de red rápida en: {network_range}...")
         
-        # Ejecutamos el motor verdadero de Nmap
-        self.nm.scan(hosts=network_range, arguments='-sn')
+        # Ejecutamos el motor verdadero de Nmap ajustado con extrema velocidad (Microservicio)
+        self.nm.scan(hosts=network_range, arguments='-sn -T4 --min-rate 1000')
         
         discovered_devices = []
         for host in self.nm.all_hosts():
@@ -44,9 +44,10 @@ class ScannerEngine:
         """
         print(f"Iniciando escaneo profundo en: {ip_target}...")
         
-        # -sV: Nmap intentará descubrir la versión exacta del servicio (CRÍTICO para la tesis).
-        # -F: Fast scan (escanea los 100 puertos más comunes para no demorar horas).
-        self.nm.scan(hosts=ip_target, arguments='-sV -F')
+        # -sV: Nmap intentará descubrir la versión exacta del servicio.
+        # -F: Fast scan (100 puertos top).
+        # -T4 y --min-rate obligan a nmap a ir al límite de red, previendo timeouts.
+        self.nm.scan(hosts=ip_target, arguments='-sV -F -T4 --min-rate 1000 --max-retries 1')
         
         if ip_target not in self.nm.all_hosts():
             return {"ip": ip_target, "puertos": []}

@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from core.scanner import ScannerEngine
+from core.firebase_client import FirebaseDB
+import datetime
 
 app = FastAPI(
     title="SecScan API (V2 - Arquitectura Cloud)",
@@ -9,34 +11,61 @@ app = FastAPI(
 )
 
 scanner = ScannerEngine()
+firebase = FirebaseDB()
+db = firebase.get_db()
 
 class ScanRequest(BaseModel):
     target_ip: str
-
-from core.firebase_client import FirebaseDB
-import datetime
 
 @app.get("/")
 def raiz():
     return {"mensaje": "El motor SecScan V2 (Microservice) está en línea."}
 
-@app.post("/api/test-db")
-def test_cloud_database():
+@app.post("/api/discover")
+def discover_network(request: ScanRequest):
     """
-    Ruta rápida para probar si la conexión y escritura hacia la nube de Google funciona.
+    Ruta Atómica 1: Usada por n8n para obtener TODAS las IPs vivas de un cajón.
+    Retorna la lista cruda y rapidísima para que n8n pueda iterarlas en paralelo.
     """
-    # 1. Instanciamos nuestra nueva conexión a Nube
-    firebase = FirebaseDB()
-    db = firebase.get_db()
+    dispositivos_vivos = scanner.discover_network(request.target_ip)
+    return {
+        "status": "ok", 
+        "total": len(dispositivos_vivos),
+        "dispositivos": dispositivos_vivos
+    }
+
+@app.post("/api/deep-scan/{ip}")
+def deep_scan_device(ip: str):
+    """
+    Ruta Atómica 2: Recibe solo UNA IP (típicamente enviada por un nodo de n8n).
+    Lo escanea a fondo para extraer puertos, servicios y lo persiste en Google Firebase.
+    """
+    puertos_info = scanner.scan_ports(ip)
     
-    # 2. Fabricamos un JSON (Documento NoSQL) falso
-    datos_prueba = {
-        "origen": "FastAPI SecScan",
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-        "mensaje": "¡Hola Mundo! El backend ha aterrizado en la Nube."
+    # Empaquetamos el objeto exacto como Documento NoSQL
+    documento = {
+        "ip": ip,
+        "mac": puertos_info.get("mac", "Desconocida"),
+        "puertos_abiertos": puertos_info.get("puertos_abiertos", []),
+        "fecha_auditoria": datetime.datetime.utcnow().isoformat(),
+        "estado": "Completado"
     }
     
-    # 3. Lo inyectamos forzosamente en una "Colección" de la nube llamada "tests" (Firestore la creará sola)
-    db.collection("tests").add(datos_prueba)
+    # Usamos la IP como el ID único del documento en la colección 'devices'
+    # set() sobreescribe la IP si ya existía para mantener la base limpia.
+    db.collection("devices").document(ip).set(documento)
     
-    return {"status": "ok", "detalle": "Datos escritos en Firebase exitosamente. ¡Ve a revisar tu consola web!"}
+    return {
+        "status": "ok",
+        "ip_escaneada": ip,
+        "puertos_encontrados": len(puertos_info.get("puertos_abiertos", []))
+    }
+
+@app.post("/api/test-db")
+def test_cloud_database():
+    db.collection("tests").add({
+        "origen": "FastAPI SecScan",
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "mensaje": "Hola Mundo. Backend está activo."
+    })
+    return {"status": "ok"}
