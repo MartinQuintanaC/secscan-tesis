@@ -20,5 +20,15 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
   - `POST /api/discover`: Mapeo de vivos veloz en red completa (Ping Sweep `-sn`), para uso directo del Maestro Orquestador.
   - `POST /api/deep-scan/{ip}`: Ataque profundo puerto a puerto (`-sV -F`) a una IP unitaria que interactúa con la persistencia inyectándolo como un Documento NoSQL en la colección `devices` de Firestore Nube.
 
-## ⏳ Sprint 4: Automatización n8n (Siguiente)
-**Objetivo:** Levantar al "Director de Orquesta" n8n para paralelizar los Microservicios.
+## ✅ Sprint 4: Orquestación y Automatización con n8n
+**Objetivo:** Levantar al "Director de Orquesta" n8n para paralelizar los Microservicios y eliminar la intervención humana.
+- **n8n Instalado:** Motor de orquestación visual levantado localmente en `localhost:5678` mediante `npx n8n` sobre Node.js v22.
+- **Workflow Diseñado:** Se construyó un flujo de 4 nodos encadenados:
+  1. `When clicking Execute` (Gatillo Manual): Dispara la secuencia bajo demanda.
+  2. `HTTP Request → POST /api/discover`: Llama a FastAPI para obtener la lista de IPs vivas.
+  3. `Split Out (dispositivos)`: Descompone el arreglo JSON agrupado en elementos individuales iterables.
+  4. `HTTP Request → POST /api/deep-scan/{{ $json.ip }}`: Para cada IP viva, dispara un escaneo profundo en paralelo e inyecta los resultados en Firebase automáticamente.
+- **Validación en Vivo:** Se ejecutó el Workflow completo verificando en la consola de Firebase que los documentos NoSQL aparecieran en tiempo real sin intervención humana.
+
+## ⏳ Sprint 5: Cruce de Vulnerabilidades CVE (Siguiente)
+**Objetivo:** Transformar datos de puertos/versiones en inteligencia accionable cruzándolos con bases de datos públicas de vulnerabilidades conocidas (CVE/NVD).

@@ -33,3 +33,17 @@ Encapsula la complejidad orientada a objetos de los otros Módulos y "Levanta la
 - Carece de memoria persistente interna. Lo que lo vuelve fácilmente descartable/desplegable en Docker de necesitarse.
 - `POST /api/discover`: Actúa como una función pura (Extrae datos rápidos pero ni siquiera llama a la Base de Datos).
 - `POST /api/deep-scan/{ip}`: Esqueleto clave de la operación persistente; interroga un escaneo duro y llama al método `.set()` de Firestore para obligar a empujar la data directo a la matriz `devices` en la colección.
+
+---
+
+## 4. Componente Externo: Workflow n8n (Orquestador Visual)
+**Rol Principal:** Director de Orquesta / Message Broker Visual.
+
+**¿Qué hace a nivel de Ingeniería?**
+n8n no es un archivo `.py` nuestro sino un motor externo que corre sobre Node.js en `localhost:5678`. Funciona como un **Orquestador de Servicios** basado en el patrón arquitectónico **"Pipes and Filters"** (Tuberías y Filtros). Cada nodo del flujo es un "Filtro" que procesa datos y los pasa al siguiente por una "Tubería".
+
+**Sus 4 Nodos (Flujo Actual):**
+1. **Gatillo Manual (`When clicking Execute`):** Punto de entrada. En producción se reemplazaría por un `Schedule Trigger` (Cron Job Visual) para ejecutar auditorías automáticas cada X horas sin intervención humana.
+2. **HTTP Request (Discover):** Envía un `POST` a nuestra API FastAPI pidiendo la lista de dispositivos vivos. Es el equivalente a un cliente HTTP programático (como Postman) pero automatizado.
+3. **Split Out (`dispositivos`):** Toma el arreglo JSON agrupado que devuelve FastAPI y lo descompone en elementos individuales. Sin este nodo, n8n trataría a los 254 equipos como "un solo bloque" en vez de procesarlos individualmente.
+4. **HTTP Request (Deep-Scan):** Usa la variable dinámica `{{ $json.ip }}` para inyectar cada IP viva en la URL del endpoint `/api/deep-scan/{ip}`. n8n ejecuta este nodo **una vez por cada elemento** que generó el Split Out, logrando paralelismo masivo.
