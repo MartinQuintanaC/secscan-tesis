@@ -47,3 +47,14 @@ n8n no es un archivo `.py` nuestro sino un motor externo que corre sobre Node.js
 2. **HTTP Request (Discover):** Envía un `POST` a nuestra API FastAPI pidiendo la lista de dispositivos vivos. Es el equivalente a un cliente HTTP programático (como Postman) pero automatizado.
 3. **Split Out (`dispositivos`):** Toma el arreglo JSON agrupado que devuelve FastAPI y lo descompone en elementos individuales. Sin este nodo, n8n trataría a los 254 equipos como "un solo bloque" en vez de procesarlos individualmente.
 4. **HTTP Request (Deep-Scan):** Usa la variable dinámica `{{ $json.ip }}` para inyectar cada IP viva en la URL del endpoint `/api/deep-scan/{ip}`. n8n ejecuta este nodo **una vez por cada elemento** que generó el Split Out, logrando paralelismo masivo.
+
+---
+
+## 5. Archivo: `core/cve_client.py`
+**Rol Principal:** Cliente de Inteligencia de Amenazas (Threat Intelligence).
+
+**¿Qué hace a nivel de Ingeniería?**
+Implementa un **Patrón Cliente HTTP** que se comunica con la API REST pública del NVD (National Vulnerability Database) del gobierno de Estados Unidos. Es el puente entre los datos crudos de nuestro escáner y la base de datos mundial de vulnerabilidades conocidas.
+
+**Su Función Principal:**
+- **`buscar_vulnerabilidades(servicio, version)`:** Recibe el nombre del software y su versión (extraídos por Nmap), construye una keyword de búsqueda, y realiza una petición GET a `https://services.nvd.nist.gov/rest/json/cves/2.0`. Parsea la respuesta JSON del gobierno y extrae: ID del CVE, descripción en inglés, severidad (CRITICAL/HIGH/MEDIUM/LOW) y score CVSS numérico (0-10). Implementa rate-limiting (`time.sleep(1.5)`) para respetar los límites de la API pública (máx ~5 peticiones por 30 segundos sin API Key) y manejo defensivo de errores (Timeout, códigos HTTP no-200) para evitar crashes durante escaneos masivos.

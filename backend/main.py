@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from core.scanner import ScannerEngine
 from core.firebase_client import FirebaseDB
+from core.cve_client import CVEClient
 import datetime
 
 app = FastAPI(
@@ -13,6 +14,7 @@ app = FastAPI(
 scanner = ScannerEngine()
 firebase = FirebaseDB()
 db = firebase.get_db()
+cve_client = CVEClient()
 
 class ScanRequest(BaseModel):
     target_ip: str
@@ -38,27 +40,77 @@ def discover_network(request: ScanRequest):
 def deep_scan_device(ip: str):
     """
     Ruta Atómica 2: Recibe solo UNA IP (típicamente enviada por un nodo de n8n).
-    Lo escanea a fondo para extraer puertos, servicios y lo persiste en Google Firebase.
+    Escanea puertos, detecta versiones, cruza con CVEs del NVD y persiste TODO en Firebase.
     """
     puertos_info = scanner.scan_ports(ip)
+    puertos = puertos_info.get("puertos_abiertos", [])
     
-    # Empaquetamos el objeto exacto como Documento NoSQL
+    # Para cada puerto abierto que tenga versión detectada, cruzamos con la base CVE mundial
+    total_vulnerabilidades = 0
+    for puerto in puertos:
+        servicio = puerto.get("servicio", "")
+        version = puerto.get("version", "")
+        
+        # Solo consultamos NVD si Nmap logró extraer una versión real
+        if version and version.strip() != "":
+            cves = cve_client.buscar_vulnerabilidades(servicio, version)
+            puerto["vulnerabilidades"] = cves
+            total_vulnerabilidades += len(cves)
+        else:
+            puerto["vulnerabilidades"] = []
+    
+    # Empaquetamos el documento completo (puertos + vulnerabilidades) como NoSQL
     documento = {
         "ip": ip,
         "mac": puertos_info.get("mac", "Desconocida"),
-        "puertos_abiertos": puertos_info.get("puertos_abiertos", []),
+        "puertos_abiertos": puertos,
+        "total_vulnerabilidades": total_vulnerabilidades,
         "fecha_auditoria": datetime.datetime.utcnow().isoformat(),
         "estado": "Completado"
     }
     
-    # Usamos la IP como el ID único del documento en la colección 'devices'
-    # set() sobreescribe la IP si ya existía para mantener la base limpia.
+    # Persistimos en Firebase (colección 'devices')
     db.collection("devices").document(ip).set(documento)
+    
+    # Si encontramos vulnerabilidades, también las guardamos en una colección dedicada
+    if total_vulnerabilidades > 0:
+        for puerto in puertos:
+            for cve in puerto.get("vulnerabilidades", []):
+                doc_vuln = {
+                    "ip": ip,
+                    "puerto": puerto.get("puerto"),
+                    "servicio": puerto.get("servicio"),
+                    "version": puerto.get("version"),
+                    "cve_id": cve["cve_id"],
+                    "descripcion": cve["descripcion"],
+                    "severidad": cve["severidad"],
+                    "score": cve["score"],
+                    "fecha_deteccion": datetime.datetime.utcnow().isoformat()
+                }
+                db.collection("vulnerabilities").document(cve["cve_id"]).set(doc_vuln)
     
     return {
         "status": "ok",
         "ip_escaneada": ip,
-        "puertos_encontrados": len(puertos_info.get("puertos_abiertos", []))
+        "puertos_encontrados": len(puertos),
+        "vulnerabilidades_encontradas": total_vulnerabilidades
+    }
+
+@app.post("/api/cve-lookup")
+def cve_lookup(servicio: str, version: str):
+    """
+    Ruta Atómica 3: Consulta directa al NVD.
+    Permite buscar vulnerabilidades de un software + versión específicos sin escanear.
+    Útil para consultas manuales desde Swagger o desde n8n.
+    """
+    resultados = cve_client.buscar_vulnerabilidades(servicio, version)
+    
+    return {
+        "status": "ok",
+        "servicio": servicio,
+        "version": version,
+        "total_cves": len(resultados),
+        "vulnerabilidades": resultados
     }
 
 @app.post("/api/test-db")

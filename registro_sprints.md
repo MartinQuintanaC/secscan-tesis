@@ -30,5 +30,13 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
   4. `HTTP Request → POST /api/deep-scan/{{ $json.ip }}`: Para cada IP viva, dispara un escaneo profundo en paralelo e inyecta los resultados en Firebase automáticamente.
 - **Validación en Vivo:** Se ejecutó el Workflow completo verificando en la consola de Firebase que los documentos NoSQL aparecieran en tiempo real sin intervención humana.
 
-## ⏳ Sprint 5: Cruce de Vulnerabilidades CVE (Siguiente)
-**Objetivo:** Transformar datos de puertos/versiones en inteligencia accionable cruzándolos con bases de datos públicas de vulnerabilidades conocidas (CVE/NVD).
+## ✅ Sprint 5: Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
+**Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
+- **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.
+- **Endpoint `/api/cve-lookup`:** Ruta atómica independiente para consultas manuales directas de vulnerabilidades sin necesidad de escanear la red.
+- **Integración en `/api/deep-scan`:** El endpoint de escaneo profundo ahora automáticamente cruza cada puerto con versión detectada contra el NVD, y persiste los resultados en dos colecciones de Firebase: `devices` (reporte completo) y `vulnerabilities` (índice individual por CVE).
+- **Validación:** Se probó con `apache 2.4.49` obteniendo 2 CVEs CRÍTICOS reales (CVE-2021-41773 y CVE-2021-42013, score 9.8/10).
+
+### 📌 Hallazgo Técnico Documentado (Sprint 5)
+> **"La calidad de la inteligencia de vulnerabilidades depende directamente de la precisión del fingerprinting de Nmap."**
+> Cuando Nmap logra extraer el nombre y versión exactos del software (ej: `apache 2.4.49`), el cruce con el NVD es quirúrgico y devuelve CVEs precisos con severidad CRÍTICA real. Sin embargo, cuando Nmap solo detecta un nombre genérico (ej: `http 2.0`), los resultados del NVD son "ruido" — CVEs antiguos e irrelevantes de servidores HTTP diversos que coinciden textualmente pero no pertenecen al software real del equipo auditado. Este hallazgo es vital para la interpretación de resultados en ambientes de producción.
