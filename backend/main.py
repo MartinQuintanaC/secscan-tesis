@@ -1,14 +1,25 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from core.scanner import ScannerEngine
 from core.firebase_client import FirebaseDB
 from core.cve_client import CVEClient
 import datetime
+import requests
 
 app = FastAPI(
     title="SecScan API (V2 - Arquitectura Cloud)",
     description="Motor de escaneo microservicio listo para n8n y Firebase",
     version="2.0.0"
+)
+
+# CORS: Permite que el frontend de React (puerto 5173) hable con este backend (puerto 8000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 scanner = ScannerEngine()
@@ -27,9 +38,23 @@ def raiz():
 def discover_network(request: ScanRequest):
     """
     Ruta Atómica 1: Usada por n8n para obtener TODAS las IPs vivas de un cajón.
-    Retorna la lista cruda y rapidísima para que n8n pueda iterarlas en paralelo.
     """
-    dispositivos_vivos = scanner.discover_network(request.target_ip)
+    # Limpiamos errores de tipeo de n8n (ej: '=192.168...')
+    ip_limpia = request.target_ip.replace('=', '').strip() if request.target_ip else ''
+    
+    # Si detectamos instrucción automática (Zero Configure), calculamos la subred en pleno vuelo
+    from core.scanner import get_local_cidr
+    if ip_limpia.lower() == "auto" or ip_limpia == "":
+        ip_real = get_local_cidr()
+    else:
+        ip_real = ip_limpia
+        
+    dispositivos_vivos = scanner.discover_network(ip_real)
+    print("====== REPORTE DE NMAP (DISCOVER) ======")
+    print(f"IP Solicitada: {request.target_ip}")
+    print(f"Encontrados: {len(dispositivos_vivos)}")
+    print(dispositivos_vivos)
+    print("========================================")
     return {
         "status": "ok", 
         "total": len(dispositivos_vivos),
@@ -39,19 +64,18 @@ def discover_network(request: ScanRequest):
 @app.post("/api/deep-scan/{ip}")
 def deep_scan_device(ip: str):
     """
-    Ruta Atómica 2: Recibe solo UNA IP (típicamente enviada por un nodo de n8n).
+    Ruta Atómica 2: Recibe solo UNA IP (típicamente enviada por n8n o el Dashboard).
     Escanea puertos, detecta versiones, cruza con CVEs del NVD y persiste TODO en Firebase.
     """
+    print(f"====== N8N PIDIÓ ESCANEO PROFUNDO PARA: {ip} ======")
     puertos_info = scanner.scan_ports(ip)
     puertos = puertos_info.get("puertos_abiertos", [])
     
-    # Para cada puerto abierto que tenga versión detectada, cruzamos con la base CVE mundial
     total_vulnerabilidades = 0
     for puerto in puertos:
         servicio = puerto.get("servicio", "")
         version = puerto.get("version", "")
         
-        # Solo consultamos NVD si Nmap logró extraer una versión real
         if version and version.strip() != "":
             cves = cve_client.buscar_vulnerabilidades(servicio, version)
             puerto["vulnerabilidades"] = cves
@@ -59,20 +83,18 @@ def deep_scan_device(ip: str):
         else:
             puerto["vulnerabilidades"] = []
     
-    # Empaquetamos el documento completo (puertos + vulnerabilidades) como NoSQL
     documento = {
         "ip": ip,
         "mac": puertos_info.get("mac", "Desconocida"),
+        "fabricante": puertos_info.get("fabricante", "Desconocido"),
         "puertos_abiertos": puertos,
         "total_vulnerabilidades": total_vulnerabilidades,
         "fecha_auditoria": datetime.datetime.utcnow().isoformat(),
         "estado": "Completado"
     }
     
-    # Persistimos en Firebase (colección 'devices')
     db.collection("devices").document(ip).set(documento)
     
-    # Si encontramos vulnerabilidades, también las guardamos en una colección dedicada
     if total_vulnerabilidades > 0:
         for puerto in puertos:
             for cve in puerto.get("vulnerabilidades", []):
@@ -93,18 +115,65 @@ def deep_scan_device(ip: str):
         "status": "ok",
         "ip_escaneada": ip,
         "puertos_encontrados": len(puertos),
-        "vulnerabilidades_encontradas": total_vulnerabilidades
+        "vulnerabilidades_encontradas": total_vulnerabilidades,
+        "detalle": documento
     }
+
+@app.post("/api/trigger-scan")
+def trigger_scan(request: ScanRequest):
+    """
+    Ruta Puente: React llama aquí y Python dispara el webhook de n8n.
+    Evita los molestos bloqueos de CORS del navegador web.
+    """
+    # Intentamos pegarle tanto a la ruta de Producción como a la de Pruebas
+    # Así garantizamos que se dispare sin importar en qué modo tengas n8n
+    url_prod = "http://localhost:5678/webhook/secscan"
+    url_test = "http://localhost:5678/webhook-test/secscan"
+    
+    try:
+        requests.post(url_prod, json={"target_ip": request.target_ip}, timeout=1)
+    except:
+        pass
+        
+    try:
+        requests.post(url_test, json={"target_ip": request.target_ip}, timeout=1)
+    except:
+        pass
+        
+    return {"status": "ok", "mensaje": "Webhook disparado con éxito"}
+
+@app.get("/api/devices")
+def get_devices():
+    """
+    Lectura: Devuelve todos los dispositivos almacenados en Firebase.
+    Usado por el Dashboard para mostrar el historial.
+    """
+    docs = db.collection("devices").stream()
+    dispositivos = []
+    for doc in docs:
+        dispositivos.append(doc.to_dict())
+    return {"status": "ok", "dispositivos": dispositivos}
+
+@app.get("/api/vulnerabilities")
+def get_vulnerabilities():
+    """
+    Lectura: Devuelve todas las vulnerabilidades almacenadas en Firebase.
+    Usado por el Dashboard para el historial de amenazas.
+    """
+    docs = db.collection("vulnerabilities").stream()
+    vulns = []
+    for doc in docs:
+        vulns.append(doc.to_dict())
+    # Ordenamos por score descendente (las más peligrosas primero)
+    vulns.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return {"status": "ok", "vulnerabilidades": vulns}
 
 @app.post("/api/cve-lookup")
 def cve_lookup(servicio: str, version: str):
     """
     Ruta Atómica 3: Consulta directa al NVD.
-    Permite buscar vulnerabilidades de un software + versión específicos sin escanear.
-    Útil para consultas manuales desde Swagger o desde n8n.
     """
     resultados = cve_client.buscar_vulnerabilidades(servicio, version)
-    
     return {
         "status": "ok",
         "servicio": servicio,

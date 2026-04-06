@@ -1,0 +1,457 @@
+import { useState, useEffect, useCallback } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useNavigate,
+} from "react-router-dom";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities } from "./services/api";
+import "./index.css";
+
+/* ========== NAVBAR ========== */
+function Navbar() {
+  return (
+    <nav className="navbar">
+      <a href="/" className="navbar-logo">
+        <div className="navbar-logo-icon">SS</div>
+        <div className="navbar-logo-text">
+          Sec<span>Scan</span>
+        </div>
+      </a>
+      <div className="navbar-status">
+        <div className="navbar-status-dot" />
+        Motor Activo
+      </div>
+    </nav>
+  );
+}
+
+/* ========== HOME ========== */
+function Home() {
+  const navigate = useNavigate();
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState("");
+  const [showRangeModal, setShowRangeModal] = useState(false);
+  const [rangeIp, setRangeIp] = useState("");
+  const [devicesFound, setDevicesFound] = useState(0);
+  const [pollCount, setPollCount] = useState(0);
+
+  // Polling: consulta Firebase cada 3 segundos mientras escanea
+  useEffect(() => {
+    if (!scanning) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const data = await getDevices();
+        const currentCount = data.dispositivos?.length || 0;
+        setDevicesFound(currentCount);
+        setPollCount((prev) => prev + 1);
+        setScanMsg(`n8n escaneando en paralelo... ${currentCount} dispositivos encontrados`);
+      } catch (e) {
+        // silenciar errores de polling
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [scanning]);
+
+  const handleFullScan = async () => {
+    setScanning(true);
+    setDevicesFound(0);
+    setPollCount(0);
+    setScanMsg("Disparando orquestador n8n en la red local (Zero Configure)...");
+    try {
+      // Dispara el webhook pidiendo a Python que calcule automáticamente la capografía (router)
+      await triggerN8nScan("auto");
+      setScanMsg("n8n está escaneando tu red en paralelo. Esperando resultados...");
+
+      // Esperamos un poco y luego consultamos Firebase para los resultados
+      // (n8n trabaja en el background, nosotros vamos consultando)
+      setTimeout(async () => {
+        // Polling activo por 60 segundos como máximo
+        const maxPolls = 20;
+        let polls = 0;
+        const checkResults = setInterval(async () => {
+          polls++;
+          try {
+            const [devData, vulnData] = await Promise.all([
+              getDevices(),
+              getVulnerabilities(),
+            ]);
+
+            const devices = devData.dispositivos || [];
+            setDevicesFound(devices.length);
+            setScanMsg(`n8n trabajando... ${devices.length} dispositivos auditados`);
+
+            // Damos unos ~40 segundos (10 polls) para dar tiempo a Nmap de escanear todas las IPs en paralelo
+            if (polls >= 10 && devices.length > 0) {
+              clearInterval(checkResults);
+              setScanning(false);
+              navigate("/historial", {
+                state: { devices, vulns: vulnData.vulnerabilidades || [] },
+              });
+            }
+
+            if (polls >= maxPolls) {
+              clearInterval(checkResults);
+              setScanning(false);
+              // Mostramos lo que haya
+              navigate("/historial", {
+                state: { devices, vulns: vulnData.vulnerabilidades || [] },
+              });
+            }
+          } catch (e) {
+            // continuar polling
+          }
+        }, 4000);
+      }, 5000); // Esperamos 5 segundos antes de empezar a preguntar
+    } catch (err) {
+      setScanning(false);
+      alert("Error: ¿Está n8n activo en localhost:5678 con el workflow activado?");
+    }
+  };
+
+  const handleRangeScan = async () => {
+    if (!rangeIp.trim()) return;
+    setShowRangeModal(false);
+    setScanning(true);
+    setScanMsg(`Escaneando objetivo: ${rangeIp}...`);
+    try {
+      const data = await deepScan(rangeIp.trim());
+      setScanning(false);
+      navigate("/results", {
+        state: {
+          data: {
+            status: "ok",
+            total_dispositivos: 1,
+            resultados: [data],
+          },
+          tipo: `IP Específica: ${rangeIp}`,
+        },
+      });
+    } catch (err) {
+      setScanning(false);
+      alert("Error de conexión con el backend. ¿Está Uvicorn encendido?");
+    }
+  };
+
+  const handleHistorial = async () => {
+    setScanning(true);
+    setScanMsg("Cargando historial desde Firebase...");
+    try {
+      const [devData, vulnData] = await Promise.all([
+        getDevices(),
+        getVulnerabilities(),
+      ]);
+      setScanning(false);
+      navigate("/historial", {
+        state: { devices: devData.dispositivos, vulns: vulnData.vulnerabilidades },
+      });
+    } catch (err) {
+      setScanning(false);
+      alert("Error al cargar historial. ¿Está el backend activo?");
+    }
+  };
+
+  const handleCancelScan = () => {
+    setScanning(false);
+    setScanMsg("");
+  };
+
+  return (
+    <div className="page-container fade-in">
+      <div className="home-hero">
+        <h1 className="home-title">
+          Monitoreo de <span>Vulnerabilidades</span>
+        </h1>
+        <p className="home-subtitle">
+          Plataforma de ciberseguridad para PyMEs. Escanea tu red, detecta servicios expuestos y cruza
+          automáticamente con la base de datos CVE mundial.
+        </p>
+      </div>
+
+      <div className="action-cards">
+        <div className="action-card slide-up" onClick={handleFullScan}>
+          <div className="action-card-icon scan">🛰️</div>
+          <h3>Escaneo General</h3>
+          <p>
+            Descubre todos los dispositivos conectados a tu red y analiza sus vulnerabilidades
+            automáticamente con n8n.
+          </p>
+        </div>
+
+        <div className="action-card slide-up" onClick={() => setShowRangeModal(true)} style={{ animationDelay: "0.1s" }}>
+          <div className="action-card-icon target">🎯</div>
+          <h3>Escaneo Específico</h3>
+          <p>
+            Ingresa una IP o rango personalizado para auditar un objetivo
+            particular de tu infraestructura.
+          </p>
+        </div>
+
+        <div className="action-card slide-up" onClick={handleHistorial} style={{ animationDelay: "0.2s" }}>
+          <div className="action-card-icon history">📊</div>
+          <h3>Historial</h3>
+          <p>
+            Consulta los resultados de escaneos anteriores almacenados
+            en la nube de Firebase.
+          </p>
+        </div>
+      </div>
+
+      {scanning && (
+        <div className="scanning-overlay">
+          <div className="scanning-spinner" />
+          <div className="scanning-text">Escaneando Red...</div>
+          <div className="scanning-sub">{scanMsg}</div>
+          {devicesFound > 0 && (
+            <div className="scanning-sub" style={{ marginTop: 8, color: "var(--accent-green)" }}>
+              🟢 {devicesFound} dispositivos detectados hasta ahora
+            </div>
+          )}
+          <button
+            className="btn btn-ghost"
+            style={{ marginTop: 24 }}
+            onClick={handleCancelScan}
+          >
+            Cancelar Escaneo
+          </button>
+        </div>
+      )}
+
+      {showRangeModal && (
+        <div className="modal-overlay" onClick={() => setShowRangeModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>🎯 Escaneo Específico</h2>
+            <p>
+              Ingresa la IP del equipo que deseas auditar (ej: 192.168.1.1)
+              o un rango CIDR (ej: 192.168.1.0/24).
+            </p>
+            <input
+              className="modal-input"
+              type="text"
+              placeholder="192.168.1.1"
+              value={rangeIp}
+              onChange={(e) => setRangeIp(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleRangeScan()}
+              autoFocus
+            />
+            <div className="modal-buttons">
+              <button className="btn btn-ghost" onClick={() => setShowRangeModal(false)}>
+                Cancelar
+              </button>
+              <button className="btn btn-primary" onClick={handleRangeScan} disabled={!rangeIp.trim()}>
+                Escanear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== RESULTS (Escaneo Específico) ========== */
+function Results() {
+  const navigate = useNavigate();
+  const locationState = window.history.state?.usr;
+
+  if (!locationState || !locationState.data) {
+    navigate("/");
+    return null;
+  }
+
+  const { data, tipo } = locationState;
+  const resultados = data.resultados || [];
+
+  const allVulns = [];
+  resultados.forEach((r) => {
+    const detalle = r.detalle || {};
+    const puertos = detalle.puertos_abiertos || [];
+    puertos.forEach((p) => {
+      (p.vulnerabilidades || []).forEach((v) => {
+        allVulns.push({
+          ...v,
+          puerto: p.puerto,
+          servicio: p.servicio,
+          version: p.version,
+          ip: detalle.ip,
+        });
+      });
+    });
+  });
+
+  allVulns.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  const totalDevices = data.total_dispositivos || 0;
+  const totalPorts = resultados.reduce((s, r) => s + (r.puertos_encontrados || 0), 0);
+  const totalVulns = allVulns.length;
+
+  const getSeverityClass = (sev) => {
+    if (!sev || sev === "No disponible") return "severity-unknown";
+    return `severity-${sev}`;
+  };
+
+  return (
+    <div className="page-container fade-in">
+      <button className="btn btn-back" onClick={() => navigate("/")}>
+        ← Volver al Inicio
+      </button>
+
+      <div className="results-header">
+        <h1>Resultados del Escaneo</h1>
+        <p>Tipo: {tipo}</p>
+      </div>
+
+      <div className="results-summary">
+        <div className="summary-card slide-up">
+          <div className="summary-card-label">Dispositivos</div>
+          <div className="summary-card-value cyan">{totalDevices}</div>
+        </div>
+        <div className="summary-card slide-up" style={{ animationDelay: "0.1s" }}>
+          <div className="summary-card-label">Puertos Abiertos</div>
+          <div className="summary-card-value green">{totalPorts}</div>
+        </div>
+        <div className="summary-card slide-up" style={{ animationDelay: "0.2s" }}>
+          <div className="summary-card-label">Vulnerabilidades</div>
+          <div className="summary-card-value red">{totalVulns}</div>
+        </div>
+      </div>
+
+      {allVulns.length > 0 ? (
+        <div className="vuln-list">
+          {allVulns.map((v, i) => (
+            <div key={i} className={`vuln-card slide-up ${getSeverityClass(v.severidad)}`} style={{ animationDelay: `${i * 0.05}s` }}>
+              <div className="vuln-score">
+                <div className="vuln-score-number">{v.score || "—"}</div>
+                <span className="vuln-score-label">{v.severidad || "N/A"}</span>
+              </div>
+              <div className="vuln-port">
+                <div className="vuln-port-number">:{v.puerto}</div>
+                <div className="vuln-port-service">{v.servicio}</div>
+                <div className="vuln-port-ip">{v.ip}</div>
+              </div>
+              <div className="vuln-info">
+                <div className="vuln-cve-id">{v.cve_id}</div>
+                <div className="vuln-description">{v.descripcion}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-state-icon">🛡️</div>
+          <p>No se encontraron vulnerabilidades con versión detectable en este escaneo.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== HISTORIAL ========== */
+function Historial() {
+  const navigate = useNavigate();
+  const locationState = window.history.state?.usr;
+
+  if (!locationState) {
+    navigate("/");
+    return null;
+  }
+
+  const { devices, vulns } = locationState;
+
+  return (
+    <div className="page-container fade-in">
+      <button className="btn btn-back" onClick={() => navigate("/")}>
+        ← Volver al Inicio
+      </button>
+
+      <div className="results-header">
+        <h1>Historial de Auditorías</h1>
+        <p>Datos almacenados en Firebase Firestore</p>
+      </div>
+
+      <div className="results-summary">
+        <div className="summary-card">
+          <div className="summary-card-label">Dispositivos Auditados</div>
+          <div className="summary-card-value cyan">{devices?.length || 0}</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-label">CVEs Detectados</div>
+          <div className="summary-card-value red">{vulns?.length || 0}</div>
+        </div>
+      </div>
+
+      <h2 style={{ marginBottom: 20, fontSize: 20 }}>Dispositivos</h2>
+      {devices && devices.length > 0 ? (
+        <div className="device-list" style={{ marginBottom: 40 }}>
+          {devices.map((d, i) => (
+            <div key={i} className="device-card slide-up" style={{ animationDelay: `${i * 0.05}s` }}>
+              <div>
+                <div className="device-ip">{d.ip}</div>
+                <div className="device-mac">
+                  {d.fabricante && d.fabricante !== "Desconocido" ? `⚙️ Fabricante: ${d.fabricante}` : `MAC: ${d.mac}`}
+                </div>
+              </div>
+              <div className="device-stat">
+                <div className="device-stat-value cyan">{d.puertos_abiertos?.length || 0}</div>
+                <div className="device-stat-label">Puertos</div>
+              </div>
+              <div className="device-stat">
+                <div className="device-stat-value red">{d.total_vulnerabilidades || 0}</div>
+                <div className="device-stat-label">CVEs</div>
+              </div>
+              <div className="device-date">{d.fecha_auditoria?.split("T")[0] || "—"}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-state-icon">📭</div>
+          <p>No hay dispositivos en el historial todavía.</p>
+        </div>
+      )}
+
+      {vulns && vulns.length > 0 && (
+        <>
+          <h2 style={{ marginBottom: 20, fontSize: 20 }}>Vulnerabilidades Detectadas</h2>
+          <div className="vuln-list">
+            {vulns.map((v, i) => (
+              <div key={i} className={`vuln-card slide-up ${v.severidad && v.severidad !== "No disponible" ? `severity-${v.severidad}` : "severity-unknown"}`}>
+                <div className="vuln-score">
+                  <div className="vuln-score-number">{v.score || "—"}</div>
+                  <span className="vuln-score-label">{v.severidad || "N/A"}</span>
+                </div>
+                <div className="vuln-port">
+                  <div className="vuln-port-number">:{v.puerto}</div>
+                  <div className="vuln-port-service">{v.servicio}</div>
+                  <div className="vuln-port-ip">{v.ip}</div>
+                </div>
+                <div className="vuln-info">
+                  <div className="vuln-cve-id">{v.cve_id}</div>
+                  <div className="vuln-description">{v.descripcion}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ========== APP ========== */
+function App() {
+  return (
+    <Router>
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/results" element={<Results />} />
+        <Route path="/historial" element={<Historial />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;

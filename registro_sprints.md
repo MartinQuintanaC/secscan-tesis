@@ -30,7 +30,29 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
   4. `HTTP Request → POST /api/deep-scan/{{ $json.ip }}`: Para cada IP viva, dispara un escaneo profundo en paralelo e inyecta los resultados en Firebase automáticamente.
 - **Validación en Vivo:** Se ejecutó el Workflow completo verificando en la consola de Firebase que los documentos NoSQL aparecieran en tiempo real sin intervención humana.
 
-## ✅ Sprint 5: Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
+### Sprint 5: Orquestador n8n e Inteligencia de Vulnerabilidades (Integración NVD)
+- [x] Levantar base de datos NoSQL Firestore y configurar esquema.
+- [x] Orquestar el flujo automatizado local con **n8n** (Split en lotes).
+- [x] Desarrollar microservicio puente `trigger-scan` para sortear restricciones CORS.
+- [x] Extracción en tiempo real de Vulnerabilidades cruzando el Nacional Vulnerability Database (NVD API v2).
+
+### Sprint 6: Plataforma Web Dashboard "Ciberseguridad Premium"
+- [x] Diseño completo de la Interfaz Web con React + Vite.
+- [x] Tema visual "Premium Dark" enfocado en UX de ciberseguridad.
+- [x] Lógica de Polling recursivo hacia Firestore para visualizar escaneos asíncronos en tiempo real.
+- [x] Construcción de páginas de Historial e Interacciones Modales por IP específica.
+
+### Sprint 7: Calibración Antifantasmas y Hardware Forense
+- [x] Corrección de falsos positivos en Nmap (eliminando `1000 min-rate`) usando forzado a ping físico (`-PR`).
+- [x] Implementación de **Vendor Fingerprinting** automático (Conversión de MAC a nombres de manufactura ej: "Huawei", "Apple").
+- [x] Renderizado condicional en frontend para dar prioridad visual al Fabricante frente a la MAC.
+
+### Sprint 8: Arquitectura Zero Configure (Producto Abierto)
+- [x] Creado subsistema de red para cálculo autónomo e instanciado del CIDR (`get_local_cidr()`) vía sockets DGRAM de bajo nivel.
+- [x] Escáner blindado contra errores forzados de tipeo por interfaces humanas (n8n Webhook Fallback System).
+- [x] Integración de un Doble Motor Geográfico: Fusión de **Nmap** + Motor nativo de SO (**ARP Cache `arp -a`**). Esto rescata Smart-TVs y Móviles en Suspensión Profunda o Privacy Configured.
+
+## ✅ Sprint 5 (Original): Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
 **Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
 - **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.
 - **Endpoint `/api/cve-lookup`:** Ruta atómica independiente para consultas manuales directas de vulnerabilidades sin necesidad de escanear la red.

@@ -1,4 +1,22 @@
 import nmap
+import subprocess
+import socket
+import re
+
+def get_local_cidr():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    
+    if ip != '127.0.0.1':
+        parts = ip.split('.')
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+    return "192.168.1.0/24"
 
 class ScannerEngine:
     def __init__(self):
@@ -16,10 +34,12 @@ class ScannerEngine:
         """
         print(f"Iniciando descubrimiento de red rápida en: {network_range}...")
         
-        # Ejecutamos el motor verdadero de Nmap ajustado con extrema velocidad (Microservicio)
-        self.nm.scan(hosts=network_range, arguments='-sn -T4 --min-rate 1000')
+        # Usamos -sn -PR para forzar un descubrimiento ARP físico (irrompible por firewalls locales)
+        self.nm.scan(hosts=network_range, arguments='-sn -PR')
         
         discovered_devices = []
+        found_ips = set()
+        
         for host in self.nm.all_hosts():
             # Solo guardamos los hosts que Nmap confirme como encendidos ("up")
             if self.nm[host]['status']['state'] == 'up':
@@ -35,6 +55,35 @@ class ScannerEngine:
                     "hostname": self.nm[host].hostname()
                 }
                 discovered_devices.append(device_info)
+                found_ips.add(host)
+                
+        # --- SUPLEMENTO ARP SUGERIDO POR EL USUARIO ---
+        print("Ejecutando motor suplementario ARP cache para rescatar dispositivos silenciosos...")
+        try:
+            arp_output = subprocess.check_output('arp -a', shell=True).decode('cp1252', errors='ignore')
+            lines = arp_output.split('\n')
+            
+            # Prefijo para la subred local (Ej: 192.168.18.)
+            prefix = network_range.split('/')[0].rsplit('.', 1)[0] + '.'
+            
+            for line in lines:
+                parts = line.split()
+                # Normalmente arp arroja: 192.168.18.212   00-11-22-...   dinámico
+                if len(parts) >= 2:
+                    ip_arp = parts[0]
+                    mac_arp = parts[1].replace('-', ':').upper()
+                    
+                    if ip_arp.startswith(prefix) and ip_arp not in found_ips and not ip_arp.endswith('.255'):
+                        if mac_arp != 'FF:FF:FF:FF:FF:FF':
+                            print(f"[!] Dispositivo Silencioso Rescatado de ARP Cache: {ip_arp}")
+                            discovered_devices.append({
+                                "ip": ip_arp,
+                                "mac": mac_arp,
+                                "hostname": "Caché Local ARP"
+                            })
+                            found_ips.add(ip_arp)
+        except Exception as e:
+            print(f"Advertencia: No se pudo procesar la tabla ARP ({e})")
                 
         return discovered_devices
 
@@ -67,9 +116,17 @@ class ScannerEngine:
                         "version": port_data['version']  # ej. 'Apache 2.4.49'
                     })
                     
+        mac = self.nm[ip_target]['addresses'].get('mac', 'Desconocida')
+        
+        # Intentamos obtener el fabricante a partir de la MAC usando la base de Nmap
+        fabricante = "Desconocido"
+        if 'vendor' in self.nm[ip_target] and mac in self.nm[ip_target]['vendor']:
+            fabricante = self.nm[ip_target]['vendor'][mac]
+            
         return {
             "ip": ip_target,
-            "mac": self.nm[ip_target]['addresses'].get('mac', 'Desconocida'),
+            "mac": mac,
+            "fabricante": fabricante,
             "puertos_abiertos": puertos_descubiertos
         }
 
