@@ -360,6 +360,29 @@ function Historial() {
 
   const { devices, vulns } = locationState;
 
+  const scrollToVuln = (ip) => {
+    // Busca TODOS los CVEs de esta IP usando un selector All
+    const els = document.querySelectorAll(`[id^="vuln-${ip}-"]`);
+    if (els.length > 0) {
+      // Siempre nos deslizamos al primero para quedar bien posicionados
+      els[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Pero hacemos brillar a TODO el grupo de tarjetas!
+      els.forEach(el => {
+        el.style.transition = 'all 0.3s ease';
+        el.style.transform = 'scale(1.03)';
+        el.style.borderColor = 'var(--accent-red)';
+        el.style.boxShadow = '0 0 20px var(--accent-red-dim)';
+        
+        setTimeout(() => {
+          el.style.transform = '';
+          el.style.borderColor = '';
+          el.style.boxShadow = '';
+        }, 1500);
+      });
+    }
+  };
+
   return (
     <div className="page-container fade-in">
       <button className="btn btn-back" onClick={() => navigate("/")}>
@@ -386,9 +409,21 @@ function Historial() {
       {devices && devices.length > 0 ? (
         <div className="device-list" style={{ marginBottom: 40 }}>
           {devices.map((d, i) => (
-            <div key={i} className="device-card slide-up" style={{ animationDelay: `${i * 0.05}s` }}>
-              <div>
-                <div className="device-ip">{d.ip}</div>
+            <div 
+              key={i} 
+              className={`device-card slide-up ${d.es_nuevo ? 'device-new-highlight' : ''}`} 
+              style={{ 
+                animationDelay: `${i * 0.05}s`,
+                cursor: d.total_vulnerabilidades > 0 ? 'pointer' : 'default'
+              }}
+              onClick={() => d.total_vulnerabilidades > 0 && scrollToVuln(d.ip)}
+              title={d.total_vulnerabilidades > 0 ? "Click para bajar automáticamente a sus CVEs" : ""}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="device-ip">{d.ip}</div>
+                  {d.es_nuevo && <span className="badge-new">🚨 NUEVO</span>}
+                </div>
                 <div className="device-mac">
                   {d.fabricante && d.fabricante !== "Desconocido" ? `⚙️ Fabricante: ${d.fabricante}` : `MAC: ${d.mac}`}
                 </div>
@@ -401,7 +436,14 @@ function Historial() {
                 <div className="device-stat-value red">{d.total_vulnerabilidades || 0}</div>
                 <div className="device-stat-label">CVEs</div>
               </div>
-              <div className="device-date">{d.fecha_auditoria?.split("T")[0] || "—"}</div>
+              <div className="device-date">
+                <div>Auditoría: {d.fecha_auditoria?.split("T")[0] || "—"}</div>
+                {d.primera_conexion && (
+                  <div style={{ fontSize: '11px', color: '#64ffda', marginTop: '4px', fontWeight: 'bold' }}>
+                    Entró: {d.primera_conexion.replace("T", " ").substring(0, 19)}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -417,7 +459,11 @@ function Historial() {
           <h2 style={{ marginBottom: 20, fontSize: 20 }}>Vulnerabilidades Detectadas</h2>
           <div className="vuln-list">
             {vulns.map((v, i) => (
-              <div key={i} className={`vuln-card slide-up ${v.severidad && v.severidad !== "No disponible" ? `severity-${v.severidad}` : "severity-unknown"}`}>
+              <div 
+                key={i} 
+                id={`vuln-${v.ip}-${i}`}
+                className={`vuln-card slide-up ${v.severidad && v.severidad !== "No disponible" ? `severity-${v.severidad}` : "severity-unknown"}`}
+              >
                 <div className="vuln-score">
                   <div className="vuln-score-number">{v.score || "—"}</div>
                   <span className="vuln-score-label">{v.severidad || "N/A"}</span>

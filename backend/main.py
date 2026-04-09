@@ -83,14 +83,41 @@ def deep_scan_device(ip: str):
         else:
             puerto["vulnerabilidades"] = []
     
+    mac_real = puertos_info.get("mac", "Desconocida")
+    # Para el historial inmutable, el pasaporte es la MAC. Si está oculta, usamos la IP.
+    id_unico = mac_real if mac_real != "Desconocida" else ip
+    
+    doc_ref = db.collection("historial").document(id_unico)
+    doc_snap = doc_ref.get()
+    
+    hora_actual = datetime.datetime.utcnow().isoformat()
+    es_nuevo = False
+    primera_conexion = hora_actual
+    
+    if not doc_snap.exists:
+        # ¡ALERTA DE INTRUSO! Es la primera vez que esta red ve a esta máquina.
+        es_nuevo = True
+        doc_ref.set({
+            "ip_inicial": ip,
+            "mac": mac_real,
+            "primera_conexion": hora_actual,
+            "fabricante": puertos_info.get("fabricante", "Desconocido")
+        })
+    else:
+        # Ya es conocido, rescatamos a qué hora entró por el transcurso de los tiempos
+        datos_historial = doc_snap.to_dict()
+        primera_conexion = datos_historial.get("primera_conexion", hora_actual)
+        
     documento = {
         "ip": ip,
-        "mac": puertos_info.get("mac", "Desconocida"),
+        "mac": mac_real,
         "fabricante": puertos_info.get("fabricante", "Desconocido"),
         "puertos_abiertos": puertos,
         "total_vulnerabilidades": total_vulnerabilidades,
-        "fecha_auditoria": datetime.datetime.utcnow().isoformat(),
-        "estado": "Completado"
+        "fecha_auditoria": hora_actual,
+        "estado": "Completado",
+        "es_nuevo": es_nuevo,
+        "primera_conexion": primera_conexion
     }
     
     db.collection("devices").document(ip).set(documento)

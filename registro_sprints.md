@@ -52,6 +52,11 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
 - [x] Escáner blindado contra errores forzados de tipeo por interfaces humanas (n8n Webhook Fallback System).
 - [x] Integración de un Doble Motor Geográfico: Fusión de **Nmap** + Motor nativo de SO (**ARP Cache `arp -a`**). Esto rescata Smart-TVs y Móviles en Suspensión Profunda o Privacy Configured.
 
+### Sprint 9: Detección de Intrusos y UX de Vulnerabilidades
+- [x] Implementación de arquitectura Firestore doble vía: Colección inmutable `historial` vs estatus transitorio `devices`.
+- [x] Lógica de Inyección de Tiempos Periciales (`primera_conexion`) de los visitantes/intrusos detectados.
+- [x] Interfaz Gráfica con Indicadores Neón de Aparatos Nuevos y auto-scroll agrupado inteligente desde IPs hacia CVEs (DOM Manipulación).
+
 ## ✅ Sprint 5 (Original): Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
 **Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
 - **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.
