@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from core.scanner import ScannerEngine
 from core.firebase_client import FirebaseDB
 from core.cve_client import CVEClient
+from core.installer import install_nmap_silently
 import datetime
 import requests
 
@@ -34,6 +35,13 @@ class ScanRequest(BaseModel):
 def raiz():
     return {"mensaje": "El motor SecScan V2 (Microservice) está en línea."}
 
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "ok", 
+        "nmap_installed": getattr(scanner, 'nmap_installed', True)
+    }
+
 @app.post("/api/discover")
 def discover_network(request: ScanRequest):
     """
@@ -49,6 +57,13 @@ def discover_network(request: ScanRequest):
     else:
         ip_real = ip_limpia
         
+    if not getattr(scanner, 'nmap_installed', True):
+        return {
+            "status": "error", 
+            "code": "NMAP_MISSING", 
+            "dispositivos": []
+        }
+        
     dispositivos_vivos = scanner.discover_network(ip_real)
     print("====== REPORTE DE NMAP (DISCOVER) ======")
     print(f"IP Solicitada: {request.target_ip}")
@@ -60,6 +75,16 @@ def discover_network(request: ScanRequest):
         "total": len(dispositivos_vivos),
         "dispositivos": dispositivos_vivos
     }
+
+@app.post("/api/install-nmap")
+def auto_install_nmap():
+    success = install_nmap_silently()
+    if success:
+        # Re-cargamos el motor para que atrape Nmap ya en el PATH
+        if hasattr(scanner, 'reload_engine'):
+            scanner.reload_engine()
+        return {"status": "ok", "mensaje": "Nmap instalado en sistema host."}
+    return {"status": "error", "mensaje": "Falló la instalación desatendida."}
 
 @app.post("/api/deep-scan/{ip}")
 def deep_scan_device(ip: str):

@@ -25,3 +25,15 @@ export async function getVulnerabilities() {
   const res = await fetch(`${API_BASE}/api/vulnerabilities`);
   return res.json();
 }
+
+export async function checkHealth() {
+  const res = await fetch(`${API_BASE}/api/health`);
+  return res.json();
+}
+
+export async function installNmap() {
+  const res = await fetch(`${API_BASE}/api/install-nmap`, {
+    method: "POST"
+  });
+  return res.json();
+}

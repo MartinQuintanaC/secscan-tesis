@@ -21,11 +21,18 @@ def get_local_cidr():
 class ScannerEngine:
     def __init__(self):
         # python-nmap intentará buscar el ejecutable "nmap" en el PATH de Windows o en su ruta base
+        self.reload_engine()
+
+    def reload_engine(self):
         try:
             self.nm = nmap.PortScanner(nmap_search_path=('nmap', r'C:\Program Files (x86)\Nmap\nmap.exe', r'C:\Program Files\Nmap\nmap.exe'))
+            self.nmap_installed = True
+            return True
         except nmap.PortScannerError:
-            print("ERROR: Nmap no se encuentra instalado en tu sistema o no está en el PATH.")
-            raise
+            self.nmap_installed = False
+            self.nm = None
+            print("Soft Error: Nmap no detectado. El sistema requerirá instalación autónoma.")
+            return False
     
     def discover_network(self, network_range: str) -> list:
         """

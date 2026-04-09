@@ -5,7 +5,7 @@ import {
   Route,
   useNavigate,
 } from "react-router-dom";
-import { triggerN8nScan, deepScan, getDevices, getVulnerabilities } from "./services/api";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap } from "./services/api";
 import "./index.css";
 
 /* ========== NAVBAR ========== */
@@ -35,6 +35,8 @@ function Home() {
   const [rangeIp, setRangeIp] = useState("");
   const [devicesFound, setDevicesFound] = useState(0);
   const [pollCount, setPollCount] = useState(0);
+  const [nmapMissing, setNmapMissing] = useState(false);
+  const [installingNmap, setInstallingNmap] = useState(false);
 
   // Polling: consulta Firebase cada 3 segundos mientras escanea
   useEffect(() => {
@@ -56,6 +58,16 @@ function Home() {
   }, [scanning]);
 
   const handleFullScan = async () => {
+    try {
+      const health = await checkHealth();
+      if (!health.nmap_installed) {
+        setNmapMissing(true);
+        return;
+      }
+    } catch (e) {
+      console.log("Error de conexión con Backend", e);
+    }
+
     setScanning(true);
     setDevicesFound(0);
     setPollCount(0);
@@ -113,6 +125,18 @@ function Home() {
 
   const handleRangeScan = async () => {
     if (!rangeIp.trim()) return;
+
+    try {
+      const health = await checkHealth();
+      if (!health.nmap_installed) {
+        setShowRangeModal(false);
+        setNmapMissing(true);
+        return;
+      }
+    } catch (e) {
+      console.log("Error de conexión", e);
+    }
+
     setShowRangeModal(false);
     setScanning(true);
     setScanMsg(`Escaneando objetivo: ${rangeIp}...`);
@@ -156,6 +180,22 @@ function Home() {
   const handleCancelScan = () => {
     setScanning(false);
     setScanMsg("");
+  };
+
+  const handleInstallNmap = async () => {
+    setInstallingNmap(true);
+    try {
+      const resp = await installNmap();
+      if (resp.status === "ok") {
+        setNmapMissing(false);
+        alert("¡Motor Nmap inyectado y habilitado correctamente!");
+      } else {
+        alert("Error de instalación: " + resp.mensaje);
+      }
+    } catch (e) {
+      alert("Error crítico ejecutando el instalador.");
+    }
+    setInstallingNmap(false);
   };
 
   return (
@@ -244,6 +284,34 @@ function Home() {
                 Escanear
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* OVERLAY DE AUTO-INSTALACIÓN */}
+      {nmapMissing && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚙️</div>
+            <h2 style={{ color: 'var(--accent-red)' }}>Motor Nmap Ausente</h2>
+            <p style={{ margin: '12px 0 24px' }}>
+              SecScan detectó que esta máquina no tiene el motor forense Nmap. 
+              El instalador autónomo puede solucionarlo en 5 segundos sin tu intervención.
+            </p>
+            
+            {installingNmap ? (
+              <div style={{ padding: '20px' }}>
+                <div className="scanning-spinner" style={{ margin: '0 auto 20px', width: '40px', height: '40px' }}></div>
+                <p style={{ color: 'var(--accent-cyan)' }}>Descargando e inyectando binarios nativos...</p>
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>(Puede que Windows te pida otorgar permisos de Administrador)</p>
+              </div>
+            ) : (
+              <div className="modal-buttons" style={{ justifyContent: 'center' }}>
+                <button className="btn btn-ghost" onClick={() => setNmapMissing(false)}>Cancelar</button>
+                <button className="btn btn-primary" onClick={handleInstallNmap}>
+                  📥 Instalar Motor Automáticamente
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

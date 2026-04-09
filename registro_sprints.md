@@ -57,6 +57,12 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
 - [x] Lógica de Inyección de Tiempos Periciales (`primera_conexion`) de los visitantes/intrusos detectados.
 - [x] Interfaz Gráfica con Indicadores Neón de Aparatos Nuevos y auto-scroll agrupado inteligente desde IPs hacia CVEs (DOM Manipulación).
 
+### Sprint 10: Zero-Touch Provisioning (Auto-Instalador de Dependencias)
+- [x] Desarrollo del subsistema de auto-descarga de binarios nativos desde servidores oficiales.
+- [x] Implementación de elevación de privilegios (UAC Windows) mediante PowerShell `RunAs` integrada en Python.
+- [x] Creación de la interfaz de "Emergencia Técnica" en React que bloquea el dashboard si faltan motores de escaneo.
+- [x] Refactorización del motor de Scanner para soportar "Soft Errors" y evitar crashes del servidor por falta de software host.
+
 ## ✅ Sprint 5 (Original): Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
 **Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
 - **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.
