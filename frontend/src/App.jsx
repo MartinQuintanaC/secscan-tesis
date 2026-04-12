@@ -397,7 +397,14 @@ function Results() {
 
   const getSeverityClass = (sev) => {
     if (!sev || sev === "No disponible") return "severity-unknown";
-    return `severity-${sev}`;
+    return `severity-${sev.toLowerCase()}`;
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 9.0) return "#ff4757"; // Crítico
+    if (score >= 7.0) return "#ffa502"; // Alto
+    if (score >= 4.0) return "#eccc68"; // Medio
+    return "#7bed9f"; // Bajo
   };
 
   return (
@@ -431,8 +438,12 @@ function Results() {
           {allVulns.map((v, i) => (
             <div key={i} className={`vuln-card slide-up ${getSeverityClass(v.severidad)}`} style={{ animationDelay: `${i * 0.05}s` }}>
               <div className="vuln-score">
-                <div className="vuln-score-number">{v.score || "—"}</div>
-                <span className="vuln-score-label">{v.severidad || "N/A"}</span>
+                <div className="vuln-score-number" style={{ color: getScoreColor(v.score || 0) }}>
+                  {v.score ? v.score.toFixed(1) : "—"}
+                </div>
+                <span className="vuln-score-label" style={{ background: getScoreColor(v.score || 0), color: '#000' }}>
+                  {v.severidad || "N/A"}
+                </span>
               </div>
               <div className="vuln-port">
                 <div className="vuln-port-number">:{v.puerto}</div>
@@ -467,6 +478,14 @@ function Historial() {
   }
 
   const { devices, vulns } = locationState;
+  const { getToken } = useAuth();
+
+  const getScoreColor = (score) => {
+    if (score >= 9.0) return "#ff4757"; // Crítico
+    if (score >= 7.0) return "#ffa502"; // Alto
+    if (score >= 4.0) return "#eccc68"; // Medio
+    return "#7bed9f"; // Bajo
+  };
 
   const scrollToVuln = (ip) => {
     // Busca TODOS los CVEs de esta IP usando un selector All
@@ -537,8 +556,10 @@ function Historial() {
                 </div>
               </div>
               <div className="device-stat">
-                <div className="device-stat-value cyan">{d.puertos_abiertos?.length || 0}</div>
-                <div className="device-stat-label">Puertos</div>
+                <div className="device-stat-value" style={{ color: getScoreColor(d.max_score || 0) }}>
+                  {d.max_score ? d.max_score.toFixed(1) : "0.0"}
+                </div>
+                <div className="device-stat-label">Riesgo Máx</div>
               </div>
               <div className="device-stat">
                 <div className="device-stat-value red">{d.total_vulnerabilidades || 0}</div>
@@ -570,11 +591,15 @@ function Historial() {
               <div 
                 key={i} 
                 id={`vuln-${v.ip}-${i}`}
-                className={`vuln-card slide-up ${v.severidad && v.severidad !== "No disponible" ? `severity-${v.severidad}` : "severity-unknown"}`}
+                className={`vuln-card slide-up severity-${v.severidad?.toLowerCase() || 'unknown'}`}
               >
                 <div className="vuln-score">
-                  <div className="vuln-score-number">{v.score || "—"}</div>
-                  <span className="vuln-score-label">{v.severidad || "N/A"}</span>
+                  <div className="vuln-score-number" style={{ color: getScoreColor(v.score || 0) }}>
+                    {v.score ? v.score.toFixed(1) : "—"}
+                  </div>
+                  <span className="vuln-score-label" style={{ background: getScoreColor(v.score || 0), color: '#000' }}>
+                    {v.severidad || "N/A"}
+                  </span>
                 </div>
                 <div className="vuln-port">
                   <div className="vuln-port-number">:{v.puerto}</div>

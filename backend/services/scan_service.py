@@ -63,12 +63,21 @@ class ScanService:
             datos_historial = doc_snap.to_dict()
             primera_conexion = datos_historial.get("primera_conexion", hora_actual)
             
+        # Cálculo de Riesgo Máximo
+        max_score = 0
+        for puerto in puertos:
+            for v in puerto.get("vulnerabilidades", []):
+                v_score = v.get("score", 0)
+                if v_score > max_score:
+                    max_score = v_score
+
         documento = {
             "ip": ip,
             "mac": mac_real,
             "fabricante": puertos_info.get("fabricante", "Desconocido"),
             "puertos_abiertos": puertos,
             "total_vulnerabilidades": total_vulnerabilidades,
+            "max_score": max_score,
             "fecha_auditoria": hora_actual,
             "estado": "Completado",
             "es_nuevo": es_nuevo,

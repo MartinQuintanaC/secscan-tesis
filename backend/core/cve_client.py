@@ -69,12 +69,23 @@ class CVEClient:
                 score = 0.0
                 metricas = cve_data.get("metrics", {})
                 
-                # Intentamos CVSS v3.1 primero, luego v3.0
-                cvss_list = metricas.get("cvssMetricV31", metricas.get("cvssMetricV30", []))
-                if cvss_list:
-                    cvss_data = cvss_list[0].get("cvssData", {})
+                # Intentamos CVSS v3.1 primero, luego v3.0, y finalmente v2 (para CVEs antiguos)
+                metricas_v3 = metricas.get("cvssMetricV31", metricas.get("cvssMetricV30", []))
+                metricas_v2 = metricas.get("cvssMetricV2", [])
+                
+                if metricas_v3:
+                    cvss_data = metricas_v3[0].get("cvssData", {})
                     score = cvss_data.get("baseScore", 0.0)
                     severidad = cvss_data.get("baseSeverity", "No disponible")
+                elif metricas_v2:
+                    cvss_data = metricas_v2[0].get("cvssData", {})
+                    score = cvss_data.get("baseScore", 0.0)
+                    # CVSS v2 no siempre trae 'baseSeverity' en texto, lo calculamos si falta
+                    severidad = metricas_v2[0].get("baseSeverity", "")
+                    if not severidad:
+                        if score >= 7.0: severidad = "HIGH"
+                        elif score >= 4.0: severidad = "MEDIUM"
+                        else: severidad = "LOW"
                 
                 vulnerabilidades.append({
                     "cve_id": cve_id,
