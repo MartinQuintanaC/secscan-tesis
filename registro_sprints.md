@@ -69,6 +69,13 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
 - [x] Estandarización de modelos Pydantic para validación estricta de payloads.
 - [x] Transición del punto de entrada `main.py` hacia `app.py` unificado.
 
+### Sprint 12: Seguridad de Identidad (Google Auth)
+- [x] Integración de **Firebase Authentication** con el proveedor Google Identity.
+- [x] Implementación de **ID Token Verification** en el backend usando `firebase-admin` decodificando JWTs en cada request.
+- [x] Creación de un **AuthContext** global en React para gestión de sesiones y persistencia de login.
+- [x] Sistema de **Rutas Protegidas** (HOC Pattern) para blindar el Dashboard contra accesos no autorizados.
+- [x] Inyección automática de cabeceras `Authorization: Bearer <JWT>` en la capa de servicios del frontend.
+
 ## ✅ Sprint 5 (Original): Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
 **Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
 - **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.

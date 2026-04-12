@@ -7,9 +7,21 @@ import {
 } from "react-router-dom";
 import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap } from "./services/api";
 import "./index.css";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import LoginPage from "./pages/LoginPage";
+
+/* ========== PROTECTED ROUTE ========== */
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="loading-screen">Cargando sesión...</div>;
+  if (!user) return <LoginPage />;
+  return children;
+};
 
 /* ========== NAVBAR ========== */
 function Navbar() {
+  const { user, logout } = useAuth();
+
   return (
     <nav className="navbar">
       <a href="/" className="navbar-logo">
@@ -18,9 +30,27 @@ function Navbar() {
           Sec<span>Scan</span>
         </div>
       </a>
-      <div className="navbar-status">
-        <div className="navbar-status-dot" />
-        Motor Activo
+      
+      <div className="navbar-right">
+        <div className="navbar-status">
+          <div className="navbar-status-dot" />
+          Motor Activo
+        </div>
+
+        {user && (
+          <div className="user-profile">
+            <img 
+              src={user.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y"} 
+              alt={user.displayName} 
+              className="user-avatar" 
+              referrerPolicy="no-referrer"
+            />
+            <div className="user-info">
+              <span className="user-name">{user.displayName}</span>
+              <button onClick={logout} className="btn-logout">Cerrar Sesión</button>
+            </div>
+          </div>
+        )}
       </div>
     </nav>
   );
@@ -38,13 +68,16 @@ function Home() {
   const [nmapMissing, setNmapMissing] = useState(false);
   const [installingNmap, setInstallingNmap] = useState(false);
 
+  const { getToken } = useAuth();
+
   // Polling: consulta Firebase cada 3 segundos mientras escanea
   useEffect(() => {
     if (!scanning) return;
 
     const interval = setInterval(async () => {
       try {
-        const data = await getDevices();
+        const token = await getToken();
+        const data = await getDevices(token);
         const currentCount = data.dispositivos?.length || 0;
         setDevicesFound(currentCount);
         setPollCount((prev) => prev + 1);
@@ -55,11 +88,12 @@ function Home() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [scanning]);
+  }, [scanning, getToken]);
 
   const handleFullScan = async () => {
     try {
-      const health = await checkHealth();
+      const token = await getToken();
+      const health = await checkHealth(token);
       if (!health.nmap_installed) {
         setNmapMissing(true);
         return;
@@ -73,8 +107,9 @@ function Home() {
     setPollCount(0);
     setScanMsg("Disparando orquestador n8n en la red local (Zero Configure)...");
     try {
+      const token = await getToken();
       // Dispara el webhook pidiendo a Python que calcule automáticamente la capografía (router)
-      await triggerN8nScan("auto");
+      await triggerN8nScan("auto", token);
       setScanMsg("n8n está escaneando tu red en paralelo. Esperando resultados...");
 
       // Esperamos un poco y luego consultamos Firebase para los resultados
@@ -86,9 +121,10 @@ function Home() {
         const checkResults = setInterval(async () => {
           polls++;
           try {
+            const token = await getToken();
             const [devData, vulnData] = await Promise.all([
-              getDevices(),
-              getVulnerabilities(),
+              getDevices(token),
+              getVulnerabilities(token),
             ]);
 
             const devices = devData.dispositivos || [];
@@ -127,7 +163,8 @@ function Home() {
     if (!rangeIp.trim()) return;
 
     try {
-      const health = await checkHealth();
+      const token = await getToken();
+      const health = await checkHealth(token);
       if (!health.nmap_installed) {
         setShowRangeModal(false);
         setNmapMissing(true);
@@ -141,7 +178,8 @@ function Home() {
     setScanning(true);
     setScanMsg(`Escaneando objetivo: ${rangeIp}...`);
     try {
-      const data = await deepScan(rangeIp.trim());
+      const token = await getToken();
+      const data = await deepScan(rangeIp.trim(), token);
       setScanning(false);
       navigate("/results", {
         state: {
@@ -163,9 +201,10 @@ function Home() {
     setScanning(true);
     setScanMsg("Cargando historial desde Firebase...");
     try {
+      const token = await getToken();
       const [devData, vulnData] = await Promise.all([
-        getDevices(),
-        getVulnerabilities(),
+        getDevices(token),
+        getVulnerabilities(token),
       ]);
       setScanning(false);
       navigate("/historial", {
@@ -185,7 +224,8 @@ function Home() {
   const handleInstallNmap = async () => {
     setInstallingNmap(true);
     try {
-      const resp = await installNmap();
+      const token = await getToken();
+      const resp = await installNmap(token);
       if (resp.status === "ok") {
         setNmapMissing(false);
         alert("¡Motor Nmap inyectado y habilitado correctamente!");
@@ -557,14 +597,38 @@ function Historial() {
 /* ========== APP ========== */
 function App() {
   return (
-    <Router>
-      <Navbar />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/results" element={<Results />} />
-        <Route path="/historial" element={<Historial />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Navbar />
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/results" 
+            element={
+              <ProtectedRoute>
+                <Results />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/historial" 
+            element={
+              <ProtectedRoute>
+                <Historial />
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

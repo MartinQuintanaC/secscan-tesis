@@ -1,17 +1,17 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from schemas.scan import ScanRequest, CVELookupRequest
 from services.scan_service import ScanService
+from api.deps import get_current_user
 import requests
 
 router = APIRouter()
 scan_service = ScanService()
 
-@app_router_instance_placeholder
 # Note: In a real modular setup, we'll use a global instance or dependency injection.
 # For simplicity in this refactor, we instantiate the service.
 
 @router.post("/discover")
-def discover_network(request: ScanRequest):
+def discover_network(request: ScanRequest, user: dict = Depends(get_current_user)):
     result = scan_service.discover(request.target_ip)
     if result.get("error") == "NMAP_MISSING":
         return {
@@ -27,7 +27,7 @@ def discover_network(request: ScanRequest):
     }
 
 @router.post("/deep-scan/{ip}")
-def deep_scan_device(ip: str):
+def deep_scan_device(ip: str, user: dict = Depends(get_current_user)):
     try:
         detalle = scan_service.deep_scan(ip)
         return {
@@ -41,7 +41,7 @@ def deep_scan_device(ip: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trigger-scan")
-def trigger_scan(request: ScanRequest):
+def trigger_scan(request: ScanRequest, user: dict = Depends(get_current_user)):
     url_prod = "http://localhost:5678/webhook/secscan"
     url_test = "http://localhost:5678/webhook-test/secscan"
     
@@ -56,7 +56,7 @@ def trigger_scan(request: ScanRequest):
     return {"status": "ok", "mensaje": "Webhook disparado con éxito"}
 
 @router.post("/cve-lookup")
-def cve_lookup(request: CVELookupRequest):
+def cve_lookup(request: CVELookupRequest, user: dict = Depends(get_current_user)):
     resultados = scan_service.cve_client.buscar_vulnerabilidades(request.servicio, request.version)
     return {
         "status": "ok",

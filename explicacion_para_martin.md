@@ -28,12 +28,30 @@ Utilizamos **Pydantic** para definir **DTOs (Data Transfer Objects)**. Estos mod
 Son las herramientas de bajo nivel o adaptadores de terceros.
 *   **`scanner.py`**: Wrapper de Nmap.
 *   **`firebase_client.py`**: Implementa el patrón **Singleton**. Garantiza que solo exista una instancia de conexión hacia Google Cloud, optimizando el uso de recursos y sockets HTTPS.
-*   **`installer.py`**: Subsistema de automatización de instalación de binarios nativos.
+*   **`installer.py`**: El instalador automático.
 
 ---
 
-## 🧠 Glosario Técnico para Tesis
+## 🔒 Capa de Seguridad (Autenticación)
 
+Para el Sprint 12, añadimos una capa de seguridad de nivel industrial:
+
+### 1. El Portero Digital (JWT/Bearer)
+Cada vez que haces login en el frontend, Google nos entrega un **ID Token (JWT)**. Este es como un "Pasaporte Digital" temporal. El frontend guarda este pasaporte y lo envía en el bolsillo de cada petición (Header `Authorization: Bearer`).
+
+### 2. Verificación en Backend (`api/deps.py`)
+El backend no confía en nadie. Cada vez que recibe una orden de escaneo, toma ese "Pasaporte Digital" y le pregunta a los servidores de Google: *"¿Es este Martín realmente quien dice ser?"*. Si la respuesta es sí, se permite la operación. Si no, se bloquea con un error **401 Unauthorized**.
+
+### 3. Estado Global (Context API)
+En el frontend usamos `AuthContext`. Esto permite que toda la aplicación sepa si estás logueado, quién eres (Nombre y Foto) y maneja el cierre de sesión de forma segura.
+
+---
+
+## 🧠 Glosario Técnico para Tesis (Actualizado)
+
+*   **Firebase Auth:** Servicio de identidad que delegamos a Google para no tener que guardar contraseñas nosotros mismos (cumpliendo con normativas de privacidad).
+*   **JWT (JSON Web Token):** El formato estándar de los tokens de seguridad que viajan entre tu navegador y el servidor.
+*   **Protected Routes:** Componentes de React que actúan como "muros": si no detectan una sesión activa, te expulsan automáticamente hacia la página de Login.
 *   **Singleton Pattern:** Usado en Firebase para no re-inicializar el SDK en cada consulta, lo que ahorra tiempo de respuesta y memoria.
 *   **Decoupling (Desacoplamiento):** Haber separado los servicios permite que si mañana cambias Nmap por otra herramienta (ej: ZMap), solo tendrías que modificar el archivo del motor en `core/`, y tu interfaz web ni lo notaría.
 *   **Asynchronous Orchestration:** El uso de n8n para paralelizar llamadas a los endpoints atómicos de FastAPI demuestra una arquitectura escalable y distribuida.
