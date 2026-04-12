@@ -63,6 +63,12 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
 - [x] Creación de la interfaz de "Emergencia Técnica" en React que bloquea el dashboard si faltan motores de escaneo.
 - [x] Refactorización del motor de Scanner para soportar "Soft Errors" y evitar crashes del servidor por falta de software host.
 
+### Sprint 11: Arquitectura Modular (Clean Architecture)
+- [x] Migración del backend monolítico a un modelo de Capas (Rutas, Servicios, Esquemas).
+- [x] Implementación de **Singleton Pattern** y **Service Layer** para desacoplar la lógica de red de la persistencia en base de datos.
+- [x] Estandarización de modelos Pydantic para validación estricta de payloads.
+- [x] Transición del punto de entrada `main.py` hacia `app.py` unificado.
+
 ## ✅ Sprint 5 (Original): Cruce de Vulnerabilidades CVE (Inteligencia de Ciberseguridad)
 **Objetivo:** Transformar datos crudos de puertos/versiones en alertas accionables cruzándolos con la base de datos mundial de vulnerabilidades conocidas (NVD del gobierno de EE.UU.).
 - **Módulo `core/cve_client.py`:** Cliente HTTP que consulta la API REST pública del NVD v2.0 (`services.nvd.nist.gov`). Recibe un servicio + versión y devuelve CVEs con su ID, descripción, severidad CVSS y score numérico.
