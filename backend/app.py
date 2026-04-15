@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.v1.api import api_router
+from api.v1.api import api_router, n8n_router
 
 app = FastAPI(
     title="SecScan API (Modular V3)",
@@ -21,5 +21,8 @@ app.add_middleware(
 def raiz():
     return {"mensaje": "SecScan Modular API está ONLINE."}
 
-# Incluimos todas las rutas bajo el prefijo /api
+# Rutas protegidas (requieren login de Google)
 app.include_router(api_router, prefix="/api")
+
+# Rutas internas para n8n (sin autenticación, solo localhost)
+app.include_router(n8n_router, prefix="/internal")

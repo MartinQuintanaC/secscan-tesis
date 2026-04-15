@@ -60,6 +60,7 @@ function Navbar() {
 function Home() {
   const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
+  const [bgTaskActive, setBgTaskActive] = useState(false);
   const [scanMsg, setScanMsg] = useState("");
   const [showRangeModal, setShowRangeModal] = useState(false);
   const [rangeIp, setRangeIp] = useState("");
@@ -91,6 +92,11 @@ function Home() {
   }, [scanning, getToken]);
 
   const handleFullScan = async () => {
+    if (bgTaskActive) {
+      alert("Ya hay un escaneo en progreso. Por favor, espera a que termine.");
+      return;
+    }
+
     try {
       const token = await getToken();
       const health = await checkHealth(token);
@@ -103,14 +109,21 @@ function Home() {
     }
 
     setScanning(true);
+    setBgTaskActive(true);
     setDevicesFound(0);
     setPollCount(0);
-    setScanMsg("Disparando orquestador n8n en la red local (Zero Configure)...");
+    setScanMsg("Conectando con el motor de escaneo...");
     try {
       const token = await getToken();
-      // Dispara el webhook pidiendo a Python que calcule automáticamente la capografía (router)
-      await triggerN8nScan("auto", token);
-      setScanMsg("n8n está escaneando tu red en paralelo. Esperando resultados...");
+      const scanResult = await triggerN8nScan("auto", token);
+      
+      if (scanResult.modo === "n8n") {
+        setScanMsg("⚡ Modo Turbo (n8n) — Escaneando tu red en paralelo...");
+      } else if (scanResult.modo === "directo") {
+        setScanMsg(`✅ Modo Directo — ${scanResult.mensaje}`);
+      } else {
+        setScanMsg("Escaneando tu red. Esperando resultados...");
+      }
 
       // Esperamos un poco y luego consultamos Firebase para los resultados
       // (n8n trabaja en el background, nosotros vamos consultando)
@@ -135,6 +148,7 @@ function Home() {
             if (polls >= 10 && devices.length > 0) {
               clearInterval(checkResults);
               setScanning(false);
+              setBgTaskActive(false);
               navigate("/historial", {
                 state: { devices, vulns: vulnData.vulnerabilidades || [] },
               });
@@ -143,6 +157,7 @@ function Home() {
             if (polls >= maxPolls) {
               clearInterval(checkResults);
               setScanning(false);
+              setBgTaskActive(false);
               // Mostramos lo que haya
               navigate("/historial", {
                 state: { devices, vulns: vulnData.vulnerabilidades || [] },
@@ -155,12 +170,17 @@ function Home() {
       }, 5000); // Esperamos 5 segundos antes de empezar a preguntar
     } catch (err) {
       setScanning(false);
+      setBgTaskActive(false);
       alert("Error: ¿Está n8n activo en localhost:5678 con el workflow activado?");
     }
   };
 
   const handleRangeScan = async () => {
     if (!rangeIp.trim()) return;
+    if (bgTaskActive) {
+      alert("Ya hay un escaneo en progreso. Por favor, espera a que termine.");
+      return;
+    }
 
     try {
       const token = await getToken();
@@ -176,11 +196,13 @@ function Home() {
 
     setShowRangeModal(false);
     setScanning(true);
+    setBgTaskActive(true);
     setScanMsg(`Escaneando objetivo: ${rangeIp}...`);
     try {
       const token = await getToken();
       const data = await deepScan(rangeIp.trim(), token);
       setScanning(false);
+      setBgTaskActive(false);
       navigate("/results", {
         state: {
           data: {
@@ -193,6 +215,7 @@ function Home() {
       });
     } catch (err) {
       setScanning(false);
+      setBgTaskActive(false);
       alert("Error de conexión con el backend. ¿Está Uvicorn encendido?");
     }
   };
@@ -216,7 +239,7 @@ function Home() {
     }
   };
 
-  const handleCancelScan = () => {
+  const handleHideProgress = () => {
     setScanning(false);
     setScanMsg("");
   };
@@ -292,9 +315,9 @@ function Home() {
           <button
             className="btn btn-ghost"
             style={{ marginTop: 24 }}
-            onClick={handleCancelScan}
+            onClick={handleHideProgress}
           >
-            Cancelar Escaneo
+            Ocultar progreso
           </button>
         </div>
       )}
