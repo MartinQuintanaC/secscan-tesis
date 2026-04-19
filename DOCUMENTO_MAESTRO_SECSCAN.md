@@ -32,3 +32,17 @@ Este es el núcleo de la tesis y el mayor avance técnico logrado:
 - **n8n**: Workflow configurado con Headers de seguridad y expresiones dinámicas conectadas al nodo Webhook.
 - **Frontend**: Generando UUIDs y pasando tokens reales.
 - **Base de Datos**: Estructura jerárquica implementada en `db_service.py` y `scan_service.py`.
+
+## 4. Conceptos Clave para la Defensa de Tesis (Sprint Actual)
+A continuación se explican los conceptos técnicos avanzados implementados para la gestión del historial y el flujo paralelo:
+
+### A. Cápsulas de Tiempo (Time Capsules) y Auditoría Inmutable
+SecScan no solo muestra el estado en vivo de una red, sino que genera "Cápsulas de Tiempo" (`users/{uid}/scans/{scanId}`). 
+- **¿Qué son?** Son snapshots (instantáneas) inmutables que congelan el estado exacto de la red (dispositivos y vulnerabilidades) en el milisegundo en que ocurrió el escaneo. 
+- **¿Para qué sirven en la industria?** Cumplen con los estándares de *Auditoría y Compliance*. Permiten a un administrador probar que en una fecha "X" el sistema no era vulnerable (o sí lo era). Si un dispositivo se desconecta mañana, la cápsula de hoy guarda evidencia de que estuvo conectado.
+- **Diseño Glassmorphism:** La UI de las cápsulas utiliza colores reactivos (Cyan para 0 riesgos, Rojo para >0 riesgos) alertando visualmente al operador de ciberseguridad sobre anomalías históricas sin necesidad de leer todo el reporte.
+
+### B. Consistencia de Datos en Entornos Altamente Paralelos (Contadores Atómicos)
+El uso de n8n introduce el desafío del procesamiento en paralelo masivo (concurrencia). Como n8n escanea múltiples dispositivos al mismo tiempo en hilos separados, el backend no puede saber en qué momento exacto termina "todo" el escaneo para hacer una suma global de las vulnerabilidades.
+- **El Problema de Condición de Carrera (Race Condition):** Si 10 hilos intentan leer, sumar y actualizar un contador global al mismo tiempo, los datos se sobrescribirían y la suma final sería errónea (por ejemplo, mostraría un `?` o un número incorrecto).
+- **La Solución (Operaciones Atómicas):** Implementamos `firestore.Increment()`. En lugar de que cada hilo lea y escriba el total, cada hilo le envía una instrucción matemática directa al servidor de base de datos de Google: *"Suma +1 a la cuenta actual"*. Al ser una transacción atómica a nivel de hardware/base de datos, se garantiza una exactitud matemática del 100% en el resumen de la cápsula de tiempo, independientemente de cuántos hilos de n8n disparen peticiones simultáneas.
