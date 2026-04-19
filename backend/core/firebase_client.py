@@ -20,9 +20,9 @@ class FirebaseDB:
                     cred = credentials.Certificate(ruta_llave)
                     firebase_admin.initialize_app(cred)
                 cls._instance.db = firestore.client()
-                print("🚀 Conexión a Firebase Firestore establecida con éxito.")
+                print("[OK] Conexion a Firebase Firestore establecida.")
             except Exception as e:
-                print(f"❌ Error al iniciar Firebase: {str(e)}")
+                print(f"[ERROR] Error al iniciar Firebase: {str(e)}")
                 raise e
         return cls._instance
 

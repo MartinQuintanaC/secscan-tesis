@@ -4,11 +4,13 @@ import {
   Routes,
   Route,
   useNavigate,
+  useParams
 } from "react-router-dom";
-import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap } from "./services/api";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices } from "./services/api";
 import "./index.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
+import ScanHistoryPage from "./pages/ScanHistoryPage";
 
 /* ========== PROTECTED ROUTE ========== */
 const ProtectedRoute = ({ children }) => {
@@ -71,7 +73,6 @@ function Home() {
 
   const { getToken } = useAuth();
 
-  // Polling: consulta Firebase cada 3 segundos mientras escanea
   useEffect(() => {
     if (!scanning) return;
 
@@ -83,9 +84,7 @@ function Home() {
         setDevicesFound(currentCount);
         setPollCount((prev) => prev + 1);
         setScanMsg(`n8n escaneando en paralelo... ${currentCount} dispositivos encontrados`);
-      } catch (e) {
-        // silenciar errores de polling
-      }
+      } catch (e) {}
     }, 3000);
 
     return () => clearInterval(interval);
@@ -104,9 +103,7 @@ function Home() {
         setNmapMissing(true);
         return;
       }
-    } catch (e) {
-      console.log("Error de conexión con Backend", e);
-    }
+    } catch (e) {}
 
     setScanning(true);
     setBgTaskActive(true);
@@ -115,7 +112,9 @@ function Home() {
     setScanMsg("Conectando con el motor de escaneo...");
     try {
       const token = await getToken();
-      const scanResult = await triggerN8nScan("auto", token);
+      const scanId = crypto.randomUUID();
+
+      const scanResult = await triggerN8nScan("auto", token, scanId);
       
       if (scanResult.modo === "n8n") {
         setScanMsg("⚡ Modo Turbo (n8n) — Escaneando tu red en paralelo...");
@@ -125,49 +124,34 @@ function Home() {
         setScanMsg("Escaneando tu red. Esperando resultados...");
       }
 
-      // Esperamos un poco y luego consultamos Firebase para los resultados
-      // (n8n trabaja en el background, nosotros vamos consultando)
       setTimeout(async () => {
-        // Polling activo por 60 segundos como máximo
         const maxPolls = 20;
         let polls = 0;
         const checkResults = setInterval(async () => {
           polls++;
           try {
             const token = await getToken();
-            const [devData, vulnData] = await Promise.all([
-              getDevices(token),
-              getVulnerabilities(token),
-            ]);
-
+            const devData = await getDevices(token);
             const devices = devData.dispositivos || [];
             setDevicesFound(devices.length);
             setScanMsg(`n8n trabajando... ${devices.length} dispositivos auditados`);
 
-            // Damos unos ~40 segundos (10 polls) para dar tiempo a Nmap de escanear todas las IPs en paralelo
             if (polls >= 10 && devices.length > 0) {
               clearInterval(checkResults);
               setScanning(false);
               setBgTaskActive(false);
-              navigate("/historial", {
-                state: { devices, vulns: vulnData.vulnerabilidades || [] },
-              });
+              navigate(`/history/${scanId}`);
             }
 
             if (polls >= maxPolls) {
               clearInterval(checkResults);
               setScanning(false);
               setBgTaskActive(false);
-              // Mostramos lo que haya
-              navigate("/historial", {
-                state: { devices, vulns: vulnData.vulnerabilidades || [] },
-              });
+              navigate(`/history/${scanId}`);
             }
-          } catch (e) {
-            // continuar polling
-          }
+          } catch (e) {}
         }, 4000);
-      }, 5000); // Esperamos 5 segundos antes de empezar a preguntar
+      }, 5000);
     } catch (err) {
       setScanning(false);
       setBgTaskActive(false);
@@ -190,9 +174,7 @@ function Home() {
         setNmapMissing(true);
         return;
       }
-    } catch (e) {
-      console.log("Error de conexión", e);
-    }
+    } catch (e) {}
 
     setShowRangeModal(false);
     setScanning(true);
@@ -220,23 +202,8 @@ function Home() {
     }
   };
 
-  const handleHistorial = async () => {
-    setScanning(true);
-    setScanMsg("Cargando historial desde Firebase...");
-    try {
-      const token = await getToken();
-      const [devData, vulnData] = await Promise.all([
-        getDevices(token),
-        getVulnerabilities(token),
-      ]);
-      setScanning(false);
-      navigate("/historial", {
-        state: { devices: devData.dispositivos, vulns: vulnData.vulnerabilidades },
-      });
-    } catch (err) {
-      setScanning(false);
-      alert("Error al cargar historial. ¿Está el backend activo?");
-    }
+  const handleHistorial = () => {
+    navigate("/history");
   };
 
   const handleHideProgress = () => {
@@ -350,7 +317,6 @@ function Home() {
           </div>
         </div>
       )}
-      {/* OVERLAY DE AUTO-INSTALACIÓN */}
       {nmapMissing && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ textAlign: 'center' }}>
@@ -365,7 +331,6 @@ function Home() {
               <div style={{ padding: '20px' }}>
                 <div className="scanning-spinner" style={{ margin: '0 auto 20px', width: '40px', height: '40px' }}></div>
                 <p style={{ color: 'var(--accent-cyan)' }}>Descargando e inyectando binarios nativos...</p>
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>(Puede que Windows te pida otorgar permisos de Administrador)</p>
               </div>
             ) : (
               <div className="modal-buttons" style={{ justifyContent: 'center' }}>
@@ -493,15 +458,55 @@ function Results() {
 /* ========== HISTORIAL ========== */
 function Historial() {
   const navigate = useNavigate();
-  const locationState = window.history.state?.usr;
-
-  if (!locationState) {
-    navigate("/");
-    return null;
-  }
-
-  const { devices, vulns } = locationState;
+  const { scanId } = useParams();
   const { getToken } = useAuth();
+  const [devices, setDevices] = useState([]);
+  const [vulns, setVulns] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const token = await getToken();
+        let devs = [];
+        let vuls = [];
+        
+        if (scanId) {
+          const data = await getScanDevices(scanId, token);
+          devs = data.devices || [];
+        } else {
+          // Fallback al legacy
+          const devData = await getDevices(token);
+          devs = devData.dispositivos || [];
+        }
+
+        // Extraer vulnerabilidades de los devices
+        devs.forEach(d => {
+          (d.puertos_abiertos || []).forEach(p => {
+            (p.vulnerabilidades || []).forEach(v => {
+              vuls.push({
+                ...v,
+                puerto: p.puerto,
+                servicio: p.servicio,
+                version: p.version,
+                ip: d.ip
+              });
+            });
+          });
+        });
+        
+        vuls.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        setDevices(devs);
+        setVulns(vuls);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [scanId, getToken]);
 
   const getScoreColor = (score) => {
     if (score >= 9.0) return "#ff4757"; // Crítico
@@ -511,19 +516,14 @@ function Historial() {
   };
 
   const scrollToVuln = (ip) => {
-    // Busca TODOS los CVEs de esta IP usando un selector All
     const els = document.querySelectorAll(`[id^="vuln-${ip}-"]`);
     if (els.length > 0) {
-      // Siempre nos deslizamos al primero para quedar bien posicionados
       els[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Pero hacemos brillar a TODO el grupo de tarjetas!
       els.forEach(el => {
         el.style.transition = 'all 0.3s ease';
         el.style.transform = 'scale(1.03)';
         el.style.borderColor = 'var(--accent-red)';
         el.style.boxShadow = '0 0 20px var(--accent-red-dim)';
-        
         setTimeout(() => {
           el.style.transform = '';
           el.style.borderColor = '';
@@ -533,14 +533,25 @@ function Historial() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="page-container fade-in">
+        <button className="btn btn-back" onClick={() => navigate("/history")}>
+          ← Volver
+        </button>
+        <div className="scanning-spinner" style={{ margin: "40px auto", width: "40px", height: "40px" }} />
+      </div>
+    );
+  }
+
   return (
     <div className="page-container fade-in">
-      <button className="btn btn-back" onClick={() => navigate("/")}>
-        ← Volver al Inicio
+      <button className="btn btn-back" onClick={() => navigate("/history")}>
+        ← Volver al Historial
       </button>
 
       <div className="results-header">
-        <h1>Historial de Auditorías</h1>
+        <h1>Detalles del Escaneo</h1>
         <p>Datos almacenados en Firebase Firestore</p>
       </div>
 
@@ -567,7 +578,6 @@ function Historial() {
                 cursor: d.total_vulnerabilidades > 0 ? 'pointer' : 'default'
               }}
               onClick={() => d.total_vulnerabilidades > 0 && scrollToVuln(d.ip)}
-              title={d.total_vulnerabilidades > 0 ? "Click para bajar automáticamente a sus CVEs" : ""}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -602,7 +612,7 @@ function Historial() {
       ) : (
         <div className="empty-state">
           <div className="empty-state-icon">📭</div>
-          <p>No hay dispositivos en el historial todavía.</p>
+          <p>No hay dispositivos en este escaneo.</p>
         </div>
       )}
 
@@ -663,6 +673,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <Results />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/history" 
+            element={
+              <ProtectedRoute>
+                <ScanHistoryPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/history/:scanId" 
+            element={
+              <ProtectedRoute>
+                <Historial />
               </ProtectedRoute>
             } 
           />

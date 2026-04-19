@@ -25,8 +25,9 @@ class ScanService:
         dispositivos = self.scanner.discover_network(ip_real)
         return {"status": "ok", "dispositivos": dispositivos, "target": ip_real}
 
-    def deep_scan(self, ip: str):
-        print(f"====== INICIANDO ESCANEO MAESTRO PARA: {ip} ======")
+    def deep_scan(self, ip: str, user_id: str = "", scan_id: str = ""):
+        print(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")
+
         puertos_info = self.scanner.scan_ports(ip)
         puertos = puertos_info.get("puertos_abiertos", [])
         
@@ -46,7 +47,7 @@ class ScanService:
         id_unico = mac_real if mac_real != "Desconocida" else ip
         
         # Lógica de Historial e Intrusos
-        doc_snap = self.db_service.get_historial_doc(id_unico)
+        doc_snap = self.db_service.get_historial_doc(id_unico, user_id)
         hora_actual = datetime.datetime.utcnow().isoformat()
         es_nuevo = False
         primera_conexion = hora_actual
@@ -58,7 +59,7 @@ class ScanService:
                 "mac": mac_real,
                 "primera_conexion": hora_actual,
                 "fabricante": puertos_info.get("fabricante", "Desconocido")
-            })
+            }, user_id)
         else:
             datos_historial = doc_snap.to_dict()
             primera_conexion = datos_historial.get("primera_conexion", hora_actual)
@@ -81,13 +82,19 @@ class ScanService:
             "fecha_auditoria": hora_actual,
             "estado": "Completado",
             "es_nuevo": es_nuevo,
-            "primera_conexion": primera_conexion
+            "primera_conexion": primera_conexion,
+            "scan_id": scan_id
         }
         
-        # Persistencia
-        self.db_service.save_device(ip, documento)
+        # 1. Guardar en vista general del usuario
+        self.db_service.save_device(ip, documento, user_id)
+        
+        # 2. Guardar en el histórico de este escaneo específico
+        if scan_id:
+            self.db_service.save_scan_device(user_id, scan_id, ip, documento)
         
         if total_vulnerabilidades > 0:
+
             for puerto in puertos:
                 for cve in puerto.get("vulnerabilidades", []):
                     self.db_service.save_vulnerability(cve["cve_id"], {
@@ -97,6 +104,6 @@ class ScanService:
                         "servicio": puerto.get("servicio"),
                         "version": puerto.get("version"),
                         "fecha_deteccion": datetime.datetime.utcnow().isoformat()
-                    })
+                    }, user_id)
         
         return documento
