@@ -48,11 +48,17 @@ npm install
 ---
 
 ## 5. El Orquestador (n8n)
-En una tercera terminal, simplemente ejecuta:
+En una tercera terminal, ejecuta:
 ```powershell
 npx n8n
 ```
-Si es la primera vez en esa PC, te pedirá permiso para instalarlo; dile que **"y"** (sí). Recuerda abrir n8n en el navegador e importar el Workflow que ya tienes configurado.
+Si es la primera vez en esa PC, te pedirá permiso para instalarlo; dile que **"y"** (sí).
+Una vez que inicie, haz lo siguiente:
+1. Abre tu navegador y ve a `http://localhost:5678`.
+2. Configura tu cuenta local (pon cualquier correo y contraseña, es solo para ti).
+3. En el menú, ve a **Workflows** y haz clic en **Import from File**.
+4. Selecciona el archivo `workflow_secscan_n8n.json` que viene incluido en la carpeta del proyecto.
+5. Arriba a la derecha, pon el switch en **Active** (Verde).
 
 ---
 
