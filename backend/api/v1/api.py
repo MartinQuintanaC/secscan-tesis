@@ -99,7 +99,7 @@ def n8n_discover(request: dict):
     if scan_id:
         _db_service.mark_scan_processed(uid_real, scan_id, "discover")
         _db_service.update_scan_metadata(uid_real, scan_id, {
-            "devices_found": len(dispositivos),
+            "devices_found": 0,
             "vulnerabilidades_found": 0,
             "status": "processing"
         })
@@ -154,7 +154,9 @@ def n8n_deep_scan(ip: str, request: dict = None):
     if scan_id:
         _db_service.mark_scan_processed(uid_real, scan_id, ip)
         
-        # Incrementar contadores dinámicamente si hay vulnerabilidades
+        # Incrementar contadores dinámicamente
+        _db_service.increment_devices(uid_real, scan_id, 1)
+        
         total_vulns = detalle.get("total_vulnerabilidades", 0)
         if total_vulns > 0:
             _db_service.increment_vulnerabilities(uid_real, scan_id, total_vulns)

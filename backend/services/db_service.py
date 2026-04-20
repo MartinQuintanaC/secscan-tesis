@@ -147,6 +147,14 @@ class DatabaseService:
                 "vulnerabilidades_found": firestore.Increment(amount)
             }, merge=True)
 
+    def increment_devices(self, user_id: str, scan_id: str, amount: int = 1):
+        """Incrementa atómicamente el contador de dispositivos de un escaneo."""
+        from firebase_admin import firestore
+        user_ref = self._get_user_ref(user_id)
+        user_ref.collection("scans").document(scan_id).set({
+            "devices_found": firestore.Increment(amount)
+        }, merge=True)
+
     def create_user_profile(self, user_id: str, email: str = ""):
         """Create user profile when they first login."""
         user_ref = self._get_user_ref(user_id)
