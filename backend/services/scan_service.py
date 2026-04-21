@@ -75,6 +75,7 @@ class ScanService:
         documento = {
             "ip": ip,
             "mac": mac_real,
+            "hostname": puertos_info.get("hostname", ""),
             "fabricante": puertos_info.get("fabricante", "Desconocido"),
             "puertos_abiertos": puertos,
             "total_vulnerabilidades": total_vulnerabilidades,

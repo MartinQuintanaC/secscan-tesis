@@ -130,9 +130,36 @@ class ScannerEngine:
         if 'vendor' in self.nm[ip_target] and mac in self.nm[ip_target]['vendor']:
             fabricante = self.nm[ip_target]['vendor'][mac]
             
+        hostname = self.nm[ip_target].hostname() if hasattr(self.nm[ip_target], 'hostname') else ""
+        
+        # Fallback 1: DNS inverso con socket (funciona para routers y PCs bien configuradas)
+        if not hostname:
+            try:
+                hostname = socket.gethostbyaddr(ip_target)[0]
+                print(f"[DNS] Hostname resuelto para {ip_target}: {hostname}")
+            except Exception:
+                pass
+        
+        # Fallback 2: NetBIOS via nbtstat -A (para PCs Windows en la misma LAN)
+        if not hostname:
+            try:
+                result = subprocess.run(
+                    ['nbtstat', '-A', ip_target],
+                    capture_output=True, text=True, timeout=5
+                )
+                for line in result.stdout.splitlines():
+                    # Buscamos la línea con <00> que es el nombre del equipo
+                    if '<00>' in line and 'UNIQUE' in line:
+                        hostname = line.strip().split()[0].strip()
+                        print(f"[NetBIOS] Hostname resuelto para {ip_target}: {hostname}")
+                        break
+            except Exception:
+                pass
+            
         return {
             "ip": ip_target,
             "mac": mac,
+            "hostname": hostname,
             "fabricante": fabricante,
             "puertos_abiertos": puertos_descubiertos
         }

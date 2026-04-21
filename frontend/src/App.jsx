@@ -572,8 +572,16 @@ function Historial() {
               onClick={() => d.total_vulnerabilidades > 0 && scrollToVuln(d.ip)}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <div className="device-ip">{d.ip}</div>
+                  {d.hostname
+                    ? <span style={{ color: 'var(--accent-cyan)', fontSize: '0.85rem', padding: '2px 8px', background: 'rgba(100, 255, 218, 0.1)', borderRadius: '4px', fontWeight: 600 }}>
+                        🖥️ {d.hostname}
+                      </span>
+                    : <span style={{ color: '#555', fontSize: '0.8rem', padding: '2px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', fontStyle: 'italic' }}>
+                        👻 Dispositivo Oculto
+                      </span>
+                  }
                   {d.es_nuevo && <span className="badge-new">🚨 NUEVO</span>}
                 </div>
                 <div className="device-mac">
