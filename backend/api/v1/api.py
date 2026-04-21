@@ -95,11 +95,11 @@ def n8n_discover(request: dict):
     
     dispositivos = result.get("dispositivos", [])
     
-    # 7. Marcar como procesado (idempotencia) y actualizar metadata
     if scan_id:
         _db_service.mark_scan_processed(uid_real, scan_id, "discover")
         _db_service.update_scan_metadata(uid_real, scan_id, {
             "devices_found": 0,
+            "total_targets": len(dispositivos),
             "vulnerabilidades_found": 0,
             "status": "processing"
         })

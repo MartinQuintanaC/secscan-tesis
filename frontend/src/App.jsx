@@ -6,7 +6,7 @@ import {
   useNavigate,
   useParams
 } from "react-router-dom";
-import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices } from "./services/api";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails } from "./services/api";
 import "./index.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -73,22 +73,7 @@ function Home() {
 
   const { getToken } = useAuth();
 
-  useEffect(() => {
-    if (!scanning) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const token = await getToken();
-        const data = await getDevices(token);
-        const currentCount = data.dispositivos?.length || 0;
-        setDevicesFound(currentCount);
-        setPollCount((prev) => prev + 1);
-        setScanMsg(`n8n escaneando en paralelo... ${currentCount} dispositivos encontrados`);
-      } catch (e) {}
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [scanning, getToken]);
+  // (El polling ahora se maneja internamente en handleFullScan para trackear el progreso real)
 
   const handleFullScan = async () => {
     if (bgTaskActive) {
@@ -125,32 +110,39 @@ function Home() {
       }
 
       setTimeout(async () => {
-        const maxPolls = 20;
+        const maxPolls = 60; // 60 * 3s = 3 minutos de timeout máximo
         let polls = 0;
         const checkResults = setInterval(async () => {
           polls++;
           try {
             const token = await getToken();
-            const devData = await getDevices(token);
-            const devices = devData.dispositivos || [];
-            setDevicesFound(devices.length);
-            setScanMsg(`n8n trabajando... ${devices.length} dispositivos auditados`);
+            const res = await getScanDetails(scanId, token);
+            if (res.status === "ok" && res.details) {
+              const { devices_found = 0, total_targets = 1 } = res.details;
+              setDevicesFound(devices_found);
+              
+              setScanMsg(`n8n trabajando... (${devices_found} / ${total_targets}) dispositivos auditados`);
 
-            if (polls >= 10 && devices.length > 0) {
-              clearInterval(checkResults);
-              setScanning(false);
-              setBgTaskActive(false);
-              navigate(`/history/${scanId}`);
+              // Condición de éxito: Llegamos al total de targets descubiertos
+              if (devices_found >= total_targets && polls >= 3) {
+                clearInterval(checkResults);
+                setScanning(false);
+                setBgTaskActive(false);
+                navigate(`/history/${scanId}`);
+              }
             }
 
+            // Timeout de seguridad si se queda trabado (ej. n8n falló a la mitad)
             if (polls >= maxPolls) {
               clearInterval(checkResults);
               setScanning(false);
               setBgTaskActive(false);
               navigate(`/history/${scanId}`);
             }
-          } catch (e) {}
-        }, 4000);
+          } catch (e) {
+             console.error("Error polling scan progress", e);
+          }
+        }, 3000);
       }, 5000);
     } catch (err) {
       setScanning(false);
