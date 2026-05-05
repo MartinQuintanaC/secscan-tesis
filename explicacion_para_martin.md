@@ -56,3 +56,27 @@ En el frontend usamos `AuthContext`. Esto permite que toda la aplicación sepa s
 *   **Decoupling (Desacoplamiento):** Haber separado los servicios permite que si mañana cambias Nmap por otra herramienta (ej: ZMap), solo tendrías que modificar el archivo del motor en `core/`, y tu interfaz web ni lo notaría.
 *   **Asynchronous Orchestration:** El uso de n8n para paralelizar llamadas a los endpoints atómicos de FastAPI demuestra una arquitectura escalable y distribuida.
 *   **Payload Validation:** El uso de Pydantic Models previene ataques de inyección de datos malformados en los puntos finales de la API.
+
+---
+
+## 🖥️ Resolución de Nombres de Dispositivos (Hostname)
+
+### ¿Qué es el Hostname y por qué lo agregamos?
+Imagínate que tu red es un edificio de departamentos. Cada dispositivo tiene un número de departamento (la **IP**, ej. `192.168.18.51`). Pero en la vida real, tú no vas al "departamento 51", vas a "la casa de Sebastián" o "la oficina de contabilidad". Ese nombre amigable es el **hostname**: el nombre real del equipo dentro de la red.
+
+Lo agregamos porque tu profesor hizo una observación muy válida: si ya sabemos dónde vive cada dispositivo (IP) y quién lo fabricó (MAC), lo lógico es también saber cómo se llama.
+
+### ¿Cómo intenta SecScan encontrar el nombre?
+SecScan es como un detective que no se rinde fácil. Si el primer método falla, prueba el segundo, y si ese falla también, prueba el tercero:
+
+1. **Primer intento — Preguntarle a Nmap:** Nmap a veces ya sabe el nombre porque el router se lo dijo durante el escaneo. Es el método más rápido.
+
+2. **Segundo intento — Preguntarle al router (DNS):** Si Nmap no sabe, el sistema le pregunta directamente al "directorio telefónico" de tu red (el servidor DNS del router): *"Oye, ¿cómo se llama el que vive en la IP .51?"*. El router, si tiene el registro, responde con el nombre.
+
+3. **Tercer intento — NetBIOS (hablar el idioma Windows):** Windows tiene su propio protocolo antiguo para anunciarse en la red, llamado NetBIOS. Es como si el dispositivo gritara su nombre en la red local. SecScan lo escucha y lo captura.
+
+### ¿Por qué algunos aparecen como "👻 Dispositivo Oculto"?
+Los celulares modernos (iPhone, Android) son muy celosos de su privacidad. Por diseño, **no responden** a ninguna de esas preguntas. Es como un vecino que no tiene su nombre en el timbre y no abre la puerta aunque toques. Eso no es un error de SecScan, es una limitación del protocolo que el sistema detecta correctamente y lo muestra con honestidad.
+
+### ¿Qué le dices al profesor si pregunta?
+> *"El sistema usa un algoritmo de resolución de identidad en cascada con 3 métodos: DNS nativo de Nmap, resolución PTR inversa y consulta NetBIOS. Si ninguno responde, el dispositivo se clasifica como 'oculto', lo cual es técnicamente correcto ya que estos dispositivos bloquean activamente las consultas por privacidad. Esto refleja un diseño robusto que maneja las excepciones del protocolo de forma explícita."*

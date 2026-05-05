@@ -46,3 +46,16 @@ SecScan no solo muestra el estado en vivo de una red, sino que genera "Cápsulas
 El uso de n8n introduce el desafío del procesamiento en paralelo masivo (concurrencia). Como n8n escanea múltiples dispositivos al mismo tiempo en hilos separados, el backend no puede saber en qué momento exacto termina "todo" el escaneo para hacer una suma global de las vulnerabilidades.
 - **El Problema de Condición de Carrera (Race Condition):** Si 10 hilos intentan leer, sumar y actualizar un contador global al mismo tiempo, los datos se sobrescribirían y la suma final sería errónea (por ejemplo, mostraría un `?` o un número incorrecto).
 - **La Solución (Operaciones Atómicas):** Implementamos `firestore.Increment()`. En lugar de que cada hilo lea y escriba el total, cada hilo le envía una instrucción matemática directa al servidor de base de datos de Google: *"Suma +1 a la cuenta actual"*. Al ser una transacción atómica a nivel de hardware/base de datos, se garantiza una exactitud matemática del 100% en el resumen de la cápsula de tiempo, independientemente de cuántos hilos de n8n disparen peticiones simultáneas.
+
+### C. Resolución de Nombres de Dispositivos (Hostname Resolution)
+SecScan implementa un sistema de **resolución de identidad en 3 capas** para intentar obtener el nombre de cada dispositivo detectado en la red. Como distintos dispositivos responden a distintos protocolos según su sistema operativo, se utilizan tres métodos en cascada:
+
+1. **Capa 1 — DNS nativo de Nmap**: Al ejecutar el escaneo profundo, Nmap intenta resolver el nombre del dispositivo usando el servidor DNS de la red local. Funciona principalmente cuando el dispositivo está registrado en el servidor DHCP del router.
+
+2. **Capa 2 — DNS Inverso con Socket (PTR Lookup)**: Si Nmap no encuentra el nombre, Python realiza una consulta DNS inversa (`socket.gethostbyaddr(ip)`). Esta técnica pregunta directamente al servidor DNS: *"¿Qué nombre tiene esta IP?"*. Funciona bien para routers y computadoras que se auto-registran en el DNS.
+
+3. **Capa 3 — NetBIOS (nbtstat -A)**: Si el DNS falla, se consulta el protocolo NetBIOS, un protocolo de red antiguo pero muy presente en redes Windows. Este método puede revelar el nombre del equipo (ej. `DESKTOP-MARTIN`) sin necesidad del servidor DNS, comunicándose directamente con el dispositivo.
+
+**Limitaciones por diseño de privacidad:** Los smartphones modernos (Android/iOS), Smart TVs y dispositivos IoT no responden a ninguno de estos protocolos intencionalmente, por razones de seguridad y privacidad del usuario. En esos casos, el sistema muestra `👻 Dispositivo Oculto`, lo cual es técnicamente correcto y académicamente válido. Esto demuestra que el sistema respeta las limitaciones del protocolo y toma decisiones de diseño informadas.
+
+**¿Por qué es importante para la tesis?** Esta implementación demuestra comprensión de los protocolos de red en las capas 2, 3 y 7 del modelo OSI (Enlace, Red y Aplicación), un requisito de alto nivel para cualquier auditoría de seguridad profesional.

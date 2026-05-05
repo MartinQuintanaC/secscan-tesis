@@ -999,6 +999,201 @@ body::before {
   font-size: 12px;
   display: flex;
   align-items: center;
+  background: rgba(0, 243, 255, 0.05);
+  border-left: 3px solid var(--accent-cyan);
+  padding: 16px;
+  margin-bottom: 30px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.btn-login {
+  width: 100%;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 24px;
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.login-error {
+  background: rgba(255, 71, 87, 0.1);
+  color: var(--accent-red);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  border: 1px solid rgba(255, 71, 87, 0.2);
+}
+
+.login-footer {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* ========== TIME CAPSULES (PREMIUM) ========== */
+.capsule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.capsule-card {
+  background: rgba(17, 22, 33, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  border-radius: 20px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  cursor: pointer;
+}
+
+.capsule-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(0, 212, 255, 0.1), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.capsule-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 212, 255, 0.1);
+}
+
+.capsule-card:hover::before {
+  opacity: 1;
+}
+
+.capsule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 16px;
+}
+
+.capsule-date {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.capsule-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.capsule-status {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.capsule-status.completed {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.capsule-status.processing {
+  background: rgba(255, 140, 0, 0.1);
+  color: var(--accent-orange);
+  border: 1px solid rgba(255, 140, 0, 0.2);
+  animation: pulse-border 2s infinite;
+}
+
+.capsule-body {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.capsule-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.capsule-stat-icon {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.capsule-stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.capsule-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.capsule-card.danger {
+  border-color: rgba(255, 51, 102, 0.2);
+}
+
+.capsule-card.danger::before {
+  background: radial-gradient(circle at top right, rgba(255, 51, 102, 0.15), transparent 60%);
+}
+
+.capsule-card.danger:hover {
+  border-color: rgba(255, 51, 102, 0.5);
+  box-shadow: 0 10px 30px rgba(255, 51, 102, 0.15);
+}
+
+.capsule-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.btn-export {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
   gap: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1008,3 +1203,765 @@ body::before {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
 }
+
+/* ========== TOGGLE LISTA / ÁRBOL ========== */
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-bottom: 32px;
+  width: fit-content;
+}
+
+.view-toggle-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.view-toggle-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.view-toggle-btn.active {
+  background: var(--bg-card);
+  color: var(--accent-cyan);
+  border: 1px solid var(--accent-cyan-dim);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.08);
+}
+
+/* ========== ÁRBOL DE TOPOLOGÍA ========== */
+.tree-container {
+  width: 100%;
+  margin-bottom: 40px;
+}
+
+.tree-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+/* Leyenda */
+.tree-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding: 14px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tree-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tree-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Conector horizontal (línea que une al padre) */
+.tree-connector-h {
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 2px;
+  background: var(--border);
+}
+
+/* Contenedor de hijos con línea vertical */
+.tree-children {
+  margin-left: 28px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---- NODO DE INFRAESTRUCTURA (Internet / Gateway / Extensor) ---- */
+.tree-infra-node {
+  position: relative;
+}
+
+.tree-infra-header {
+  position: relative;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.tree-infra-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--infra-color, var(--border));
+  border-left: 3px solid var(--infra-color, var(--border));
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 0 0 transparent;
+}
+
+.tree-infra-header:hover .tree-infra-card {
+  background: var(--bg-card-hover);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--infra-color) 15%, transparent);
+}
+
+.tree-infra-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.tree-infra-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-infra-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tree-infra-ip {
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--infra-color, var(--accent-cyan));
+}
+
+.tree-infra-fab {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tree-infra-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.badge-infra-type {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.tree-infra-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---- NODO DISPOSITIVO (hoja) ---- */
+.tree-device-node {
+  position: relative;
+}
+
+.tree-device-header {
+  position: relative;
+  padding: 2px 0;
+}
+
+.tree-device-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--score-color, #555);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  transition: all 0.2s ease;
+}
+
+.tree-device-header:hover .tree-device-card,
+.tree-device-header[style*="pointer"]:hover .tree-device-card {
+  background: var(--bg-card);
+  border-color: var(--score-color, #555);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--score-color) 15%, transparent);
+  transform: translateX(2px);
+}
+
+.tree-device-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.tree-device-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-device-ip {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+}
+
+.tree-device-hostname {
+  font-size: 12px;
+  color: var(--accent-cyan);
+}
+
+.tree-device-fab {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tree-device-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* Puertos expandibles del dispositivo */
+.tree-device-ports {
+  margin-left: 28px;
+  padding-left: 16px;
+  border-left: 2px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* ---- NODO PUERTO ---- */
+.tree-port-wrapper {
+  position: relative;
+}
+
+.tree-port-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--radius-xs);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  transition: all 0.15s ease;
+  flex-wrap: wrap;
+}
+
+.tree-port-header.has-vulns {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--port-color) 25%, transparent);
+}
+
+.tree-port-header.has-vulns:hover {
+  background: color-mix(in srgb, var(--port-color) 8%, transparent);
+}
+
+.tree-port-bullet {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tree-port-num {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-cyan);
+}
+
+.tree-port-svc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tree-port-ver {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  flex: 1;
+}
+
+.tree-port-cve-count {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tree-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* CVEs dentro de un puerto */
+.tree-port-cves {
+  margin-left: 16px;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tree-cve-item {
+  background: rgba(255, 51, 102, 0.05);
+  border: 1px solid rgba(255, 51, 102, 0.15);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+}
+
+.tree-cve-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.tree-cve-id {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-cyan);
+}
+
+.tree-cve-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tree-cve-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---- BADGES ---- */
+.badge-ip-private {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  text-transform: uppercase;
+}
+
+.badge-new-small {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--accent-red);
+  background: var(--accent-red-dim);
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.badge-risk-score {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 5px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.badge-safe {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7bed9f;
+  background: rgba(123, 237, 159, 0.1);
+  border: 1px solid rgba(123, 237, 159, 0.2);
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
+.badge-ports {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.badge-ports:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* Responsive árbol */
+@media (max-width: 768px) {
+  .tree-children {
+    margin-left: 12px;
+    padding-left: 10px;
+  }
+  .tree-device-meta {
+    justify-content: flex-start;
+  }
+  .view-toggle {
+    width: 100%;
+  }
+  .view-toggle-btn {
+    flex: 1;
+    text-align: center;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TOGGLE VISTA LISTA / ÁRBOL
+══════════════════════════════════════════════════════════════ */
+.view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-bottom: 28px;
+}
+.view-toggle-btn {
+  padding: 8px 22px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+}
+.view-toggle-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+.view-toggle-btn.active {
+  background: var(--bg-card);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0,212,255,0.25);
+  box-shadow: 0 0 12px rgba(0,212,255,0.08);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ÁRBOL DE TOPOLOGÍA — ORG CHART TOP-DOWN
+══════════════════════════════════════════════════════════════ */
+.nt-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 40px;
+}
+
+/* Leyenda */
+.nt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.nt-legend-item { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+
+/* Viewport — scrollable + grab */
+.nt-viewport {
+  width: 100%;
+  height: 580px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  user-select: none;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.nt-viewport::-webkit-scrollbar { width: 6px; height: 6px; }
+.nt-viewport::-webkit-scrollbar-track { background: transparent; }
+.nt-viewport::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Canvas — contenido del árbol, escala por zoom */
+.nt-canvas {
+  display: flex;
+  justify-content: center;
+  padding: 48px 80px 80px;
+  min-width: max-content;
+  transition: transform 0.15s ease;
+}
+
+/* ─── ORG CHART: UL/LI ─── */
+.nt-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+/* Rama raíz: solo muestra el nodo centrado, sin línea superior */
+.nt-children--root > .nt-branch {
+  padding-top: 0;
+}
+.nt-children--root > .nt-branch::before,
+.nt-children--root > .nt-branch::after {
+  display: none;
+}
+
+/* Cada branch */
+.nt-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+  position: relative;
+  padding-top: 48px; /* espacio para conectores */
+}
+
+/* Línea vertical de la barra horizontal al nodo */
+.nt-branch::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 48px;
+  background: linear-gradient(to bottom, rgba(0,212,255,0.5), rgba(0,212,255,0.15));
+}
+
+/* Barra horizontal que conecta hermanos */
+.nt-branch::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 2px;
+  background: rgba(0,212,255,0.3);
+  left: 0;
+  right: 0;
+}
+.nt-branch:first-child::after { left: 50%; }
+.nt-branch:last-child::after  { right: 50%; }
+.nt-branch:only-child::after  { display: none; }
+/* Si solo hay un hijo, la línea vertical es pura vertical sin barra horizontal */
+.nt-branch:only-child::before {
+  background: linear-gradient(to bottom, rgba(0,212,255,0.5), rgba(0,212,255,0.15));
+}
+
+/* ─── TARJETAS DE NODO ─── */
+.nt-card {
+  position: relative;
+  border-radius: 14px;
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  backdrop-filter: blur(12px);
+  min-width: 160px;
+  max-width: 200px;
+}
+.nt-card:hover {
+  transform: translateY(-3px);
+}
+
+.nt-card-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.nt-card:hover .nt-card-glow { opacity: 1; }
+
+.nt-card--internet {
+  background: rgba(0,212,255,0.06);
+  border: 1.5px solid rgba(0,212,255,0.35);
+  box-shadow: 0 0 24px rgba(0,212,255,0.1), 0 4px 20px rgba(0,0,0,0.3);
+  min-width: 180px;
+}
+.nt-card--gateway {
+  background: rgba(91,127,222,0.1);
+  border: 1.5px solid rgba(91,127,222,0.45);
+  box-shadow: 0 0 24px rgba(91,127,222,0.12), 0 4px 20px rgba(0,0,0,0.3);
+  min-width: 200px;
+}
+.nt-card--extensor {
+  background: rgba(243,156,18,0.08);
+  border: 1.5px solid rgba(243,156,18,0.4);
+  box-shadow: 0 0 20px rgba(243,156,18,0.1), 0 4px 16px rgba(0,0,0,0.25);
+  min-width: 170px;
+}
+.nt-card--device {
+  background: rgba(255,255,255,0.03);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-left: 3px solid var(--risk-color, #555);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  min-width: 155px;
+  max-width: 190px;
+}
+.nt-card--device:hover {
+  border-color: var(--risk-color, #555);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--risk-color) 20%, transparent), 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.nt-card-icon { font-size: 24px; line-height: 1; }
+.nt-card-label { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.nt-card-hostname { font-size: 11px; color: var(--accent-cyan); }
+.nt-card-ip {
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+}
+.nt-card-fab { font-size: 10px; color: var(--text-muted); }
+
+.nt-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Popup de puertos (debajo del device card) */
+.nt-device-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.nt-ports-popup {
+  margin-top: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  max-width: 260px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  z-index: 10;
+  animation: fadeIn 0.15s ease;
+}
+.nt-port-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.nt-port-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.nt-port-num { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--accent-cyan); font-size: 12px; }
+.nt-port-svc { color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; }
+.nt-port-ver { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; flex: 1; font-size: 10px; }
+
+/* Controles de zoom */
+.nt-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.nt-ctrl-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  font-family: monospace;
+}
+.nt-ctrl-btn:hover { background: var(--bg-card-hover); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.nt-zoom-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.nt-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .nt-viewport { height: 420px; }
+  .nt-card { min-width: 130px; padding: 14px 12px 10px; }
+  .nt-branch { padding: 0 10px; padding-top: 40px; }
+}
+

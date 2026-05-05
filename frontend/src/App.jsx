@@ -4,13 +4,15 @@ import {
   Routes,
   Route,
   useNavigate,
-  useParams
+  useParams,
+  useLocation
 } from "react-router-dom";
 import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails } from "./services/api";
 import "./index.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import ScanHistoryPage from "./pages/ScanHistoryPage";
+import NetworkTree, { getDeviceIcon } from "./components/NetworkTree";
 
 /* ========== PROTECTED ROUTE ========== */
 const ProtectedRoute = ({ children }) => {
@@ -128,7 +130,7 @@ function Home() {
                 clearInterval(checkResults);
                 setScanning(false);
                 setBgTaskActive(false);
-                navigate(`/history/${scanId}`);
+                navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
               }
             }
 
@@ -137,7 +139,7 @@ function Home() {
               clearInterval(checkResults);
               setScanning(false);
               setBgTaskActive(false);
-              navigate(`/history/${scanId}`);
+              navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
             }
           } catch (e) {
              console.error("Error polling scan progress", e);
@@ -450,11 +452,13 @@ function Results() {
 /* ========== HISTORIAL ========== */
 function Historial() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { scanId } = useParams();
   const { getToken } = useAuth();
   const [devices, setDevices] = useState([]);
   const [vulns, setVulns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [vista, setVista] = useState(location.state?.defaultView || "lista");
 
   useEffect(() => {
     async function loadData() {
@@ -558,6 +562,30 @@ function Historial() {
         </div>
       </div>
 
+      {/* ===== TOGGLE VISTA ===== */}
+      <div className="view-toggle">
+        <button
+          className={`view-toggle-btn${vista === "lista" ? " active" : ""}`}
+          onClick={() => setVista("lista")}
+        >
+          ☰ Vista Lista
+        </button>
+        <button
+          className={`view-toggle-btn${vista === "arbol" ? " active" : ""}`}
+          onClick={() => setVista("arbol")}
+        >
+          🌳 Vista Árbol
+        </button>
+      </div>
+
+      {/* ===== VISTA ÁRBOL ===== */}
+      {vista === "arbol" && (
+        <NetworkTree devices={devices} />
+      )}
+
+      {/* ===== VISTA LISTA (existente) ===== */}
+      {vista === "lista" && (
+        <>
       <h2 style={{ marginBottom: 20, fontSize: 20 }}>Dispositivos</h2>
       {devices && devices.length > 0 ? (
         <div className="device-list" style={{ marginBottom: 40 }}>
@@ -576,10 +604,10 @@ function Historial() {
                   <div className="device-ip">{d.ip}</div>
                   {d.hostname
                     ? <span style={{ color: 'var(--accent-cyan)', fontSize: '0.85rem', padding: '2px 8px', background: 'rgba(100, 255, 218, 0.1)', borderRadius: '4px', fontWeight: 600 }}>
-                        🖥️ {d.hostname}
+                        {getDeviceIcon(d)} {d.hostname}
                       </span>
                     : <span style={{ color: '#555', fontSize: '0.8rem', padding: '2px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', fontStyle: 'italic' }}>
-                        👻 Dispositivo Oculto
+                        {getDeviceIcon(d)} Dispositivo Oculto
                       </span>
                   }
                   {d.es_nuevo && <span className="badge-new">🚨 NUEVO</span>}
@@ -615,8 +643,10 @@ function Historial() {
           <p>No hay dispositivos en este escaneo.</p>
         </div>
       )}
+        </>
+      )}
 
-      {vulns && vulns.length > 0 && (
+      {vista === "lista" && vulns && vulns.length > 0 && (
         <>
           <h2 style={{ marginBottom: 20, fontSize: 20 }}>Vulnerabilidades Detectadas</h2>
           <div className="vuln-list">
