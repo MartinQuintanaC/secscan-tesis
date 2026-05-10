@@ -2,8 +2,9 @@ import nmap
 import subprocess
 import socket
 import re
+import ipaddress
 
-def get_local_cidr():
+def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('8.8.8.8', 80))
@@ -12,11 +13,18 @@ def get_local_cidr():
         ip = '127.0.0.1'
     finally:
         s.close()
-    
+    return ip
+
+def get_local_cidr():
+    ip = get_local_ip()
     if ip != '127.0.0.1':
         parts = ip.split('.')
         return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
     return "192.168.1.0/24"
+
+def get_local_mac():
+    import uuid
+    return ':'.join(['{:02x}'.format((uuid.getnode() >> elements) & 0xff) for elements in range(0,2*6,2)][::-1]).upper()
 
 class ScannerEngine:
     def __init__(self):
@@ -33,6 +41,88 @@ class ScannerEngine:
             self.nm = None
             print("Soft Error: Nmap no detectado. El sistema requerirá instalación autónoma.")
             return False
+
+    def _is_private_ip(self, ip_str: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            return ip.is_private
+        except ValueError:
+            return False
+
+    def _get_mac_from_arp(self, ip_target: str) -> str:
+        """Intenta obtener la MAC de una IP mediante el comando arp -a local."""
+        try:
+            arp_output = subprocess.check_output(['arp', '-a', ip_target], shell=True).decode('cp1252', errors='ignore')
+            for line in arp_output.split('\n'):
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] == ip_target:
+                    mac = parts[1].replace('-', ':').upper()
+                    if mac != 'FF:FF:FF:FF:FF:FF':
+                        return mac
+        except Exception:
+            pass
+        return "Desconocida"
+
+    def fase1_traceroute(self) -> dict:
+        """
+        FASE 1: Ejecuta tracert hacia 8.8.8.8 para descubrir el 'esqueleto' de la red.
+        Retorna:
+            - hops_privados: Nodos internos (ej. Extensores, Router Principal).
+            - router_isp: Primer salto con IP pública (Internet).
+        """
+        print("[FASE 1] Iniciando Traceroute hacia 8.8.8.8 para descubrir la columna vertebral...")
+        hops_privados = []
+        router_isp = None
+        
+        try:
+            # tracert -d: no resuelve nombres, -h 15: máximo 15 saltos
+            # -w 500: timeout de 500ms por salto para que sea súper rápido
+            result = subprocess.run(
+                ['tracert', '-d', '-h', '15', '-w', '500', '8.8.8.8'], 
+                capture_output=True, text=True, timeout=20
+            )
+            
+            # Buscar IPs en cada línea usando regex
+            ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+            
+            for line in result.stdout.splitlines():
+                match = ip_pattern.search(line)
+                if match:
+                    ip = match.group(0)
+                    
+                    # Ignoramos si es la IP destino 8.8.8.8
+                    if ip == '8.8.8.8':
+                        continue
+                        
+                    if self._is_private_ip(ip):
+                        mac = self._get_mac_from_arp(ip)
+                        hops_privados.append({
+                            "ip": ip,
+                            "mac": mac,
+                            "tipo": "router_privado",
+                            "hostname": "Hop Interno"
+                        })
+                        print(f"  -> [HOP PRIVADO] {ip} (MAC: {mac})")
+                    else:
+                        # La primera IP pública que encontramos es el ISP
+                        router_isp = {"ip": ip, "tipo": "router_isp", "hostname": "ISP Público"}
+                        print(f"  -> [HOP PÚBLICO - ISP] {ip} (Fin de la red local)")
+                        break # Detenemos la búsqueda de hops, ya salimos a Internet
+                        
+        except subprocess.TimeoutExpired:
+            print("  [Traceroute] Timeout expirado.")
+        except Exception as e:
+            print(f"  [Traceroute] Error: {e}")
+            
+        # El Router Principal (C) es el último salto privado que vimos antes de salir a Internet
+        if hops_privados:
+            hops_privados[-1]["hostname"] = "Router Principal (C)"
+            hops_privados[-1]["tipo"] = "router_principal"
+            
+        return {
+            "hops_privados": hops_privados,
+            "router_isp": router_isp
+        }
     
     def discover_network(self, network_range: str) -> list:
         """
@@ -55,6 +145,10 @@ class ScannerEngine:
                 mac = "Desconocida"
                 if 'mac' in self.nm[host]['addresses']:
                     mac = self.nm[host]['addresses']['mac']
+                
+                # Suplemento MAC local
+                if host == get_local_ip() and mac == "Desconocida":
+                    mac = get_local_mac()
                     
                 device_info = {
                     "ip": host,
@@ -125,6 +219,11 @@ class ScannerEngine:
                     
         mac = self.nm[ip_target]['addresses'].get('mac', 'Desconocida')
         
+        # --- SUPLEMENTO MAC LOCAL ---
+        if ip_target == get_local_ip() and mac == 'Desconocida':
+            mac = get_local_mac()
+        # --- FIN SUPLEMENTO MAC LOCAL ---
+        
         # Intentamos obtener el fabricante a partir de la MAC usando la base de Nmap
         fabricante = "Desconocido"
         if 'vendor' in self.nm[ip_target] and mac in self.nm[ip_target]['vendor']:
@@ -168,11 +267,7 @@ class ScannerEngine:
 if __name__ == "__main__":
     scanner = ScannerEngine()
     
-    print("\n--- PRUEBA 1: VIVOS ---")
-    resultados_vivos = scanner.discover_network("127.0.0.1")
-    print(resultados_vivos)
-    
-    print("\n--- PRUEBA 2: PUERTOS ---")
-    resultados_puertos = scanner.scan_ports("127.0.0.1")
+    print("\n--- PRUEBA FASE 1: TRACEROUTE ---")
+    resultados_traceroute = scanner.fase1_traceroute()
     import json
-    print(json.dumps(resultados_puertos, indent=2))
+    print(json.dumps(resultados_traceroute, indent=2))
