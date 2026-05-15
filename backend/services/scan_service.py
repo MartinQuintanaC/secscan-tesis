@@ -22,8 +22,16 @@ class ScanService:
         if not getattr(self.scanner, 'nmap_installed', True):
             return {"error": "NMAP_MISSING", "target": ip_real}
 
+        # Fase 1: Descubrir esqueleto de red con Traceroute
+        topology = self.scanner.fase1_traceroute()
+
+        # Fase 2: Escaneo liviano (por ahora Nmap, pronto DHCP/SNMP)
         dispositivos = self.scanner.discover_network(ip_real)
-        return {"status": "ok", "dispositivos": dispositivos, "target": ip_real}
+        
+        # Guardar todo en topology para que Frontend lo use
+        topology["devices"] = dispositivos
+
+        return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology}
 
     def deep_scan(self, ip: str, user_id: str = "", scan_id: str = ""):
         print(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")

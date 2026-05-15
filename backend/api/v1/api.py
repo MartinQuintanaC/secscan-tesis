@@ -101,7 +101,8 @@ def n8n_discover(request: dict):
             "devices_found": 0,
             "total_targets": len(dispositivos),
             "vulnerabilidades_found": 0,
-            "status": "processing"
+            "status": "processing",
+            "topology": result.get("topology", {})
         })
     
     return {

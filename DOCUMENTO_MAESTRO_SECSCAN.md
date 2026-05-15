@@ -59,3 +59,22 @@ SecScan implementa un sistema de **resolución de identidad en 3 capas** para in
 **Limitaciones por diseño de privacidad:** Los smartphones modernos (Android/iOS), Smart TVs y dispositivos IoT no responden a ninguno de estos protocolos intencionalmente, por razones de seguridad y privacidad del usuario. En esos casos, el sistema muestra `👻 Dispositivo Oculto`, lo cual es técnicamente correcto y académicamente válido. Esto demuestra que el sistema respeta las limitaciones del protocolo y toma decisiones de diseño informadas.
 
 **¿Por qué es importante para la tesis?** Esta implementación demuestra comprensión de los protocolos de red en las capas 2, 3 y 7 del modelo OSI (Enlace, Red y Aplicación), un requisito de alto nivel para cualquier auditoría de seguridad profesional.
+
+## 5. Fase 1: Descubrimiento de Topología (Traceroute Avanzado)
+Para cumplir con los requerimientos de mapeo físico de la red y generar la Vista en Árbol Jerárquica, se implementó un motor de escaneo de "esqueleto" de red en el backend de Python (`backend/core/scanner.py`). Este motor resuelve problemas reales de infraestructuras complejas mediante los siguientes Sprints de desarrollo:
+
+### Sprint 1: Ejecución Segura, Timeout y Fallback
+- **Comando Nivel Enterprise:** Sustitución de `tracert` por `nmap --traceroute -sn 8.8.8.8` para mayor fidelidad técnica.
+- **Tolerancia a Fallos (Timeouts):** Implementación de un timeout de 30s. Si Nmap se congela en redes hostiles o institucionales, el sistema no colapsa.
+- **Fallback a Puerta de Enlace:** Si el traceroute falla (ej. por falta de permisos de Administrador para usar sockets crudos), el sistema captura el error y ejecuta internamente un `ipconfig`, parsea la "Puerta de enlace predeterminada" y garantiza que el frontend siempre tenga un Router Principal funcional para renderizar el árbol.
+
+### Sprint 2: Parseo de Nodos Invisibles y Dinámicos
+- **Detección de ICMP Bloqueado:** Manejo de respuestas vacías (`...` en Nmap o `* * *` en Tracert) clasificándolas inteligentemente como `{"ip": "unknown", "tipo": "invisible"}`. Esto evita que el rastreo se rompa cuando un aparato de red prohíbe el ping.
+- **Cadenas Múltiples:** Capacidad de descubrir `N` cantidad de extensores en cascada. El algoritmo clasifica todos los saltos privados como `extensor` y convierte automáticamente al último salto privado antes de Internet en el `router_principal`.
+
+### Sprint 3: Detección de Topologías Ciegas (0 Hops)
+- **Switches No Administrados y Modo Bridge:** Soportar topologías donde el traceroute salta directamente a la IP pública sin reportar saltos intermedios privados (común si la PC está conectada a un switch ciego o el router principal funciona solo como módem). El sistema detecta el arreglo vacío y activa el mecanismo de Fallback, protegiendo a la aplicación de errores por índice fuera de rango (`IndexError`).
+
+### Sprint 4: Detección de Doble NAT (Segmentación de Red)
+- **Comparación Inteligente de Subredes:** El sistema extrae el rango CIDR de la PC host (`get_local_cidr()`) y lo contrasta matemáticamente con cada salto interno descubierto.
+- **Marcado de Aislamiento (`nat_habilitado`):** Si la subred del host difiere de la del salto intermedio, el sistema etiqueta al extensor como un router con NAT habilitado. Esto documenta formalmente que los dispositivos debajo de ese extensor residen en una red lógica aislada, aportando una visión perimetral crucial para la ciberseguridad.

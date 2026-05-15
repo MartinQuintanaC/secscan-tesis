@@ -63,65 +63,162 @@ class ScannerEngine:
             pass
         return "Desconocida"
 
+    def fallback_to_gateway(self, extra_warning=None) -> dict:
+        """Obtiene la Puerta de Enlace Predeterminada de Windows como fallback si el traceroute falla."""
+        print("  [Fallback] Usando ipconfig para extraer el Default Gateway...")
+        advertencias = ["Se ejecutó Fallback de Puerta de Enlace debido a falta de permisos o bloqueo de red."]
+        if extra_warning:
+            advertencias.append(extra_warning)
+            
+        try:
+            output = subprocess.check_output('ipconfig', shell=True).decode('cp1252', errors='ignore')
+            for line in output.split('\n'):
+                if 'Puerta de enlace predeterminada' in line or 'Default Gateway' in line:
+                    match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', line)
+                    if match:
+                        ip = match.group(0)
+                        return {
+                            "hops_privados": [{
+                                "ip": ip,
+                                "mac": self._get_mac_from_arp(ip),
+                                "tipo": "router_principal",
+                                "hostname": "Router Principal (C)"
+                            }],
+                            "router_isp": None,
+                            "advertencias": advertencias
+                        }
+        except Exception as e:
+            print(f"  [Fallback Error] No se pudo obtener gateway: {e}")
+            
+        return {"hops_privados": [], "router_isp": None, "advertencias": advertencias}
+
     def fase1_traceroute(self) -> dict:
         """
-        FASE 1: Ejecuta tracert hacia 8.8.8.8 para descubrir el 'esqueleto' de la red.
+        FASE 1: Ejecuta traceroute hacia 8.8.8.8 para descubrir el 'esqueleto' de la red.
         Retorna:
             - hops_privados: Nodos internos (ej. Extensores, Router Principal).
             - router_isp: Primer salto con IP pública (Internet).
         """
-        print("[FASE 1] Iniciando Traceroute hacia 8.8.8.8 para descubrir la columna vertebral...")
+        print("[FASE 1] Iniciando Nmap Traceroute hacia 8.8.8.8 para descubrir la columna vertebral...")
         hops_privados = []
         router_isp = None
+        advertencias = []
         
         try:
-            # tracert -d: no resuelve nombres, -h 15: máximo 15 saltos
-            # -w 500: timeout de 500ms por salto para que sea súper rápido
+            # Reemplazamos tracert por nmap con un timeout estricto de 30s
             result = subprocess.run(
-                ['tracert', '-d', '-h', '15', '-w', '500', '8.8.8.8'], 
-                capture_output=True, text=True, timeout=20
+                ['nmap', '--traceroute', '-sn', '8.8.8.8'], 
+                capture_output=True, text=True, timeout=30
             )
             
-            # Buscar IPs en cada línea usando regex
+            # Revisar si falló por permisos (stderr tiene contenido de error)
+            if result.returncode != 0 and result.stderr:
+                print(f"  [Nmap Error] Falta de permisos o error: {result.stderr.strip()}")
+                return self.fallback_to_gateway()
+                
+            output = result.stdout
+            
+            # Buscar el inicio del bloque TRACEROUTE
+            if "TRACEROUTE" not in output:
+                print("  [Nmap Error] El bloque TRACEROUTE no se encontró en la salida.")
+                return self.fallback_to_gateway("El comando Nmap falló o no retornó un bloque TRACEROUTE válido.")
+                
+            traceroute_block = output.split("TRACEROUTE")[1]
             ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
             
-            for line in result.stdout.splitlines():
+            for line in traceroute_block.splitlines():
+                line = line.strip()
+                if not line or "HOP" in line:
+                    continue
+                    
+                # Detectar nodos invisibles de Nmap ("4   ... 6")
+                if "..." in line:
+                    parts = line.split("...")
+                    try:
+                        start_hop = int(parts[0].strip())
+                        end_hop = int(parts[1].strip())
+                        for h in range(start_hop, end_hop + 1):
+                            hops_privados.append({
+                                "ip": "unknown",
+                                "tipo": "invisible",
+                                "rtt_ms": None,
+                                "hostname": "Hop Invisible (Bloqueado)"
+                            })
+                            if "Se detectaron saltos invisibles o bloqueos de ICMP en la ruta." not in advertencias:
+                                advertencias.append("Se detectaron saltos invisibles o bloqueos de ICMP en la ruta.")
+                            print("  -> [HOP INVISIBLE] (ICMP Bloqueado / Tiempo Agotado)")
+                    except Exception:
+                        pass
+                    continue
+                
+                # Detectar nodos invisibles de tracert ("* * *")
+                if "*    *    *" in line or "* * *" in line:
+                    hops_privados.append({
+                        "ip": "unknown",
+                        "tipo": "invisible",
+                        "rtt_ms": None,
+                        "hostname": "Hop Invisible (Bloqueado)"
+                    })
+                    if "Se detectaron saltos invisibles o bloqueos de ICMP en la ruta." not in advertencias:
+                        advertencias.append("Se detectaron saltos invisibles o bloqueos de ICMP en la ruta.")
+                    print("  -> [HOP INVISIBLE] (ICMP Bloqueado / Tiempo Agotado)")
+                    continue
+                    
+                # Extraemos IPs en la línea
                 match = ip_pattern.search(line)
                 if match:
                     ip = match.group(0)
                     
-                    # Ignoramos si es la IP destino 8.8.8.8
                     if ip == '8.8.8.8':
                         continue
                         
                     if self._is_private_ip(ip):
                         mac = self._get_mac_from_arp(ip)
+                        
+                        # Sprint 4: Detectar si el hop está en una subred diferente (Doble NAT)
+                        nat_habilitado = False
+                        try:
+                            local_cidr = get_local_cidr()
+                            nat_habilitado = not (ipaddress.ip_address(ip) in ipaddress.ip_network(local_cidr, strict=False))
+                            if nat_habilitado and "Se detectó Doble NAT en uno o más extensores, posibles subredes ocultas." not in advertencias:
+                                advertencias.append("Se detectó Doble NAT en uno o más extensores, posibles subredes ocultas.")
+                        except Exception:
+                            pass
+                            
                         hops_privados.append({
                             "ip": ip,
                             "mac": mac,
-                            "tipo": "router_privado",
-                            "hostname": "Hop Interno"
+                            "tipo": "extensor", # Todos inician como extensor hasta llegar al final
+                            "hostname": "Extensor / Router Intermedio",
+                            "nat_habilitado": nat_habilitado
                         })
-                        print(f"  -> [HOP PRIVADO] {ip} (MAC: {mac})")
+                        print(f"  -> [HOP PRIVADO] {ip} (MAC: {mac}) {'[NAT DETECTADO]' if nat_habilitado else ''}")
                     else:
-                        # La primera IP pública que encontramos es el ISP
                         router_isp = {"ip": ip, "tipo": "router_isp", "hostname": "ISP Público"}
                         print(f"  -> [HOP PÚBLICO - ISP] {ip} (Fin de la red local)")
-                        break # Detenemos la búsqueda de hops, ya salimos a Internet
+                        break
                         
         except subprocess.TimeoutExpired:
-            print("  [Traceroute] Timeout expirado.")
+            print("  [Traceroute] Timeout de 30s expirado.")
+            return self.fallback_to_gateway()
         except Exception as e:
-            print(f"  [Traceroute] Error: {e}")
+            print(f"  [Traceroute] Excepción crítica: {e}")
+            return self.fallback_to_gateway()
             
-        # El Router Principal (C) es el último salto privado que vimos antes de salir a Internet
+        # Sprint 3: Fallback si por alguna razón la lista quedó vacía pero Nmap corrió
+        # Esto pasa si hay un switch no administrado y Nmap saltó directo a Internet sin ver el router local.
+        if not hops_privados:
+            return self.fallback_to_gateway("La topología está ciega (posible switch pasivo). Se activó el Fallback.")
+            
+        # El Router Principal (C) es el último salto (sea invisible o con IP) antes de salir a Internet
         if hops_privados:
             hops_privados[-1]["hostname"] = "Router Principal (C)"
             hops_privados[-1]["tipo"] = "router_principal"
             
         return {
             "hops_privados": hops_privados,
-            "router_isp": router_isp
+            "router_isp": router_isp,
+            "advertencias": advertencias
         }
     
     def discover_network(self, network_range: str) -> list:

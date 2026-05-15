@@ -457,6 +457,7 @@ function Historial() {
   const { getToken } = useAuth();
   const [devices, setDevices] = useState([]);
   const [vulns, setVulns] = useState([]);
+  const [topology, setTopology] = useState(null);
   const [loading, setLoading] = useState(true);
   const [vista, setVista] = useState(location.state?.defaultView || "lista");
 
@@ -466,10 +467,17 @@ function Historial() {
         const token = await getToken();
         let devs = [];
         let vuls = [];
+        let topo = null;
         
         if (scanId) {
-          const data = await getScanDevices(scanId, token);
+          const [data, detailsData] = await Promise.all([
+            getScanDevices(scanId, token),
+            getScanDetails(scanId, token)
+          ]);
           devs = data.devices || [];
+          if (detailsData.status === "ok" && detailsData.details) {
+             topo = detailsData.details.topology;
+          }
         } else {
           // Fallback al legacy
           const devData = await getDevices(token);
@@ -495,6 +503,7 @@ function Historial() {
 
         setDevices(devs);
         setVulns(vuls);
+        setTopology(topo);
       } catch (e) {
         console.error(e);
       } finally {
@@ -542,11 +551,10 @@ function Historial() {
 
   return (
     <div className="page-container fade-in">
-      <button className="btn btn-back" onClick={() => navigate("/history")}>
-        ← Volver al Historial
-      </button>
-
-      <div className="results-header">
+      <div className="historial-header">
+        <button className="btn btn-back" onClick={() => navigate("/history")}>
+          ← Volver
+        </button>
         <h1>Detalles del Escaneo</h1>
         <p>Datos almacenados en Firebase Firestore</p>
       </div>
@@ -580,7 +588,17 @@ function Historial() {
 
       {/* ===== VISTA ÁRBOL ===== */}
       {vista === "arbol" && (
-        <NetworkTree devices={devices} />
+        <NetworkTree 
+          devices={devices} 
+          topology={topology} 
+          onVulnClick={(ip) => {
+            if (document.fullscreenElement) {
+              document.exitFullscreen().catch(err => console.log(err));
+            }
+            setVista("lista");
+            setTimeout(() => scrollToVuln(ip), 150);
+          }}
+        />
       )}
 
       {/* ===== VISTA LISTA (existente) ===== */}

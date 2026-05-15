@@ -57,15 +57,72 @@ export function getDeviceIcon(d) {
   return "💻";
 }
 
-/* ─── ÁRBOL HEURÍSTICO ──────────────────────────────────────── */
-function buildTree(devices) {
-  if (!devices?.length) return null;
+/* ─── ÁRBOL HEURÍSTICO / TOPOLÓGICO ──────────────────────────────────────── */
+function buildTree(devices, topology) {
+  if (!devices?.length && !topology) return null;
+  
   const bySubnet = {};
-  devices.forEach(d => {
+  (devices || []).forEach(d => {
     const p = getSubnetPrefix(d.ip);
     if (!bySubnet[p]) bySubnet[p] = [];
     bySubnet[p].push(d);
   });
+
+  // Si tenemos topología real del backend (Traceroute)
+  if (topology && topology.hops_privados) {
+    const hops = topology.hops_privados;
+    // El último hop privado es el gateway principal
+    const mainHop = hops[hops.length - 1];
+    // Los anteriores son extensores
+    const extHops = hops.slice(0, -1);
+    
+    // Asignar prefijos a los hops
+    const mainPrefix = mainHop ? getSubnetPrefix(mainHop.ip) : null;
+    
+    const main = mainPrefix ? {
+      prefix: mainPrefix,
+      gateway: mainHop,
+      devices: bySubnet[mainPrefix] || [],
+      total: (bySubnet[mainPrefix] || []).length
+    } : null;
+
+    const extensors = extHops.map((hop, i) => {
+      if (hop.tipo === "invisible") {
+        return {
+          prefix: `invisible-${i}`,
+          gateway: hop,
+          devices: [],
+          total: 0
+        };
+      }
+      const p = getSubnetPrefix(hop.ip);
+      return {
+        prefix: p,
+        gateway: hop,
+        devices: bySubnet[p] || [],
+        total: (bySubnet[p] || []).length
+      };
+    });
+
+    // Subredes huérfanas (descubiertas por Nmap pero sin hop de traceroute)
+    const knownPrefixes = [mainPrefix, ...extensors.map(e => e.prefix)].filter(Boolean);
+    const orphanSubnets = Object.entries(bySubnet)
+      .filter(([prefix]) => !knownPrefixes.includes(prefix))
+      .map(([prefix, devs]) => ({
+        prefix,
+        gateway: devs.find(d => d.ip === `${prefix}.1`) || { ip: `${prefix}.1`, hostname: 'Gateway Inferido' },
+        devices: devs.filter(d => d.ip !== `${prefix}.1`),
+        total: devs.length,
+      }));
+
+    return { 
+      isp: topology.router_isp, 
+      main: main || orphanSubnets[0], 
+      extensors: [...extensors, ...(main ? orphanSubnets : orphanSubnets.slice(1))] 
+    };
+  }
+
+  // Fallback a la heurística antigua si no hay topología
   const subnets = Object.entries(bySubnet)
     .map(([prefix, devs]) => ({
       prefix,
@@ -74,7 +131,8 @@ function buildTree(devices) {
       total: devs.length,
     }))
     .sort((a, b) => b.total - a.total);
-  return { main: subnets[0], extensors: subnets.slice(1) };
+    
+  return { isp: null, main: subnets[0], extensors: subnets.slice(1) };
 }
 
 /* ─── CARD: INTERNET ────────────────────────────────────────── */
@@ -109,7 +167,7 @@ function GatewayCard({ ip, hostname, fabricante }) {
 }
 
 /* ─── CARD: EXTENSOR ────────────────────────────────────────── */
-function ExtensorCard({ ip, hostname, fabricante, deviceCount }) {
+function ExtensorCard({ ip, hostname, fabricante, deviceCount, nat_habilitado }) {
   return (
     <div className="nt-card nt-card--extensor">
       <div className="nt-card-glow" style={{ background: "radial-gradient(circle, rgba(243,156,18,0.3) 0%, transparent 70%)" }} />
@@ -121,6 +179,11 @@ function ExtensorCard({ ip, hostname, fabricante, deviceCount }) {
         <div className="nt-badge" style={{ background: "rgba(243,156,18,0.15)", color: "#f39c12", border: "1px solid rgba(243,156,18,0.35)" }}>
           EXTENSOR
         </div>
+        {nat_habilitado && (
+          <div className="nt-badge" style={{ background: "rgba(255,51,102,0.15)", color: "#ff3366", border: "1px solid rgba(255,51,102,0.35)" }}>
+            Doble NAT 🛡️
+          </div>
+        )}
         <div className="nt-badge" style={{ background: "rgba(255,255,255,0.05)", color: "#7a8ba8" }}>
           {deviceCount} dispositivos
         </div>
@@ -129,18 +192,38 @@ function ExtensorCard({ ip, hostname, fabricante, deviceCount }) {
   );
 }
 
+/* ─── CARD: INVISIBLE ───────────────────────────────────────── */
+function InvisibleCard() {
+  return (
+    <div className="nt-card nt-card--invisible" style={{ opacity: 0.6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(30,41,59,0.5)" }}>
+      <div className="nt-card-glow" style={{ background: "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)" }} />
+      <div className="nt-card-icon" style={{ filter: "grayscale(100%)", opacity: 0.7 }}>👻</div>
+      <div className="nt-card-label" style={{ color: "#7a8ba8", fontStyle: "italic" }}>Hop Invisible</div>
+      <div className="nt-badge" style={{ background: "rgba(255,255,255,0.05)", color: "#7a8ba8", border: "1px solid rgba(255,255,255,0.1)" }}>
+        ICMP BLOQUEADO
+      </div>
+    </div>
+  );
+}
+
 /* ─── CARD: DISPOSITIVO ─────────────────────────────────────── */
-function DeviceCard({ device }) {
+function DeviceCard({ device, onVulnClick }) {
   const [open, setOpen] = useState(false);
   const color = getScoreColor(device.max_score);
   const hasPorts = device.puertos_abiertos?.length > 0;
+  const hasVulns = device.total_vulnerabilidades > 0;
 
   return (
     <div className="nt-device-wrapper">
       <div
         className="nt-card nt-card--device"
         style={{ "--risk-color": color, cursor: hasPorts ? "pointer" : "default" }}
-        onClick={() => hasPorts && setOpen(!open)}
+        onClick={(e) => {
+          // Si damos click normal abre puertos.
+          // Si tiene vulns y damos click, tal vez redirigimos? 
+          // O solo abrir puertos, y los puertos vulnerables nos redirigen.
+          if (hasPorts) setOpen(!open);
+        }}
       >
         <div className="nt-card-glow" style={{ background: `radial-gradient(circle, ${color}22 0%, transparent 70%)` }} />
         <div className="nt-card-icon">{getDeviceIcon(device)}</div>
@@ -161,9 +244,17 @@ function DeviceCard({ device }) {
               ✓ SEGURO
             </div>
           )}
-          {device.total_vulnerabilidades > 0 && (
-            <div className="nt-badge" style={{ background: "rgba(255,51,102,0.1)", color: "#ff3366", border: "1px solid rgba(255,51,102,0.25)" }}>
-              {device.total_vulnerabilidades} CVE
+          {hasVulns && (
+            <div 
+              className="nt-badge" 
+              style={{ background: "rgba(255,51,102,0.1)", color: "#ff3366", border: "1px solid rgba(255,51,102,0.25)", cursor: "pointer" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onVulnClick) onVulnClick(device.ip);
+              }}
+              title="Ver detalles en Vista Lista"
+            >
+              {device.total_vulnerabilidades} CVE ↗
             </div>
           )}
           {device.es_nuevo && (
@@ -183,17 +274,26 @@ function DeviceCard({ device }) {
       {open && hasPorts && (
         <div className="nt-ports-popup">
           {device.puertos_abiertos.map((p, i) => {
-            const hasVulns = p.vulnerabilidades?.length > 0;
-            const pColor = hasVulns ? getScoreColor(Math.max(...p.vulnerabilidades.map(v => v.score || 0))) : "#4a5568";
+            const pHasVulns = p.vulnerabilidades?.length > 0;
+            const pColor = pHasVulns ? getScoreColor(Math.max(...p.vulnerabilidades.map(v => v.score || 0))) : "#4a5568";
             return (
-              <div key={i} className="nt-port-row" style={{ "--pc": pColor }}>
+              <div 
+                key={i} 
+                className="nt-port-row" 
+                style={{ "--pc": pColor, cursor: pHasVulns ? "pointer" : "default" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (pHasVulns && onVulnClick) onVulnClick(device.ip);
+                }}
+                title={pHasVulns ? "Ver detalles en Vista Lista" : ""}
+              >
                 <span className="nt-port-dot" style={{ background: pColor }} />
                 <span className="nt-port-num">:{p.puerto}</span>
                 <span className="nt-port-svc">{p.servicio}</span>
                 {p.version && <span className="nt-port-ver">{p.version}</span>}
-                {hasVulns && (
+                {pHasVulns && (
                   <span style={{ marginLeft: "auto", color: pColor, fontSize: 11, fontWeight: 700 }}>
-                    ⚠ {p.vulnerabilidades.length} CVE
+                    ⚠ {p.vulnerabilidades.length} CVE ↗
                   </span>
                 )}
               </div>
@@ -220,10 +320,11 @@ function OrgBranch({ card, children }) {
 }
 
 /* ─── COMPONENTE PRINCIPAL ──────────────────────────────────── */
-export default function NetworkTree({ devices }) {
-  const tree = useMemo(() => buildTree(devices), [devices]);
+export default function NetworkTree({ devices, topology, onVulnClick }) {
+  const tree = useMemo(() => buildTree(devices, topology), [devices, topology]);
   const viewportRef = useRef(null);
   const [zoom, setZoom] = useState(1);
+  const [showWarnings, setShowWarnings] = useState(false);
   const dragging = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
@@ -261,11 +362,35 @@ export default function NetworkTree({ devices }) {
     );
   }
 
-  const { main, extensors } = tree;
-  const hasExtensors = extensors.length > 0;
+  const { isp, main, extensors } = tree;
+  const hasExtensors = extensors && extensors.length > 0;
+  const warnings = topology?.advertencias || [];
 
   return (
     <div className="nt-root">
+      
+      {/* Alertas Toggle */}
+      {warnings.length > 0 && (
+        <div style={{ position: "absolute", top: 60, left: 20, zIndex: 10 }}>
+          <button 
+            onClick={() => setShowWarnings(!showWarnings)}
+            style={{ background: "#ff8c00", color: "#111827", padding: "6px 12px", border: "none", borderRadius: 4, fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, boxShadow: "0 4px 12px rgba(255, 140, 0, 0.3)" }}
+          >
+            ⚠️ {warnings.length} Alertas de Topología {showWarnings ? "▲" : "▼"}
+          </button>
+          {showWarnings && (
+            <div style={{ background: "rgba(17, 24, 39, 0.9)", border: "1px solid rgba(255, 140, 0, 0.5)", borderRadius: 8, padding: 16, marginTop: 8, maxWidth: 350, backdropFilter: "blur(8px)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
+              <h4 style={{ margin: "0 0 10px 0", color: "#ff8c00", fontSize: 14 }}>Advertencias de Escaneo</h4>
+              <ul style={{ margin: 0, paddingLeft: 20, color: "#e2e8f0", fontSize: 13, display: "flex", flexDirection: "column", gap: 8 }}>
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Leyenda */}
       <div className="nt-legend">
         {[
@@ -302,20 +427,30 @@ export default function NetworkTree({ devices }) {
 
             {/* INTERNET → GATEWAY */}
             <OrgBranch
-              card={<InternetCard />}
+              card={
+                <div className="nt-card nt-card--internet">
+                  <div className="nt-card-glow" style={{ background: "radial-gradient(circle, rgba(0,212,255,0.3) 0%, transparent 70%)" }} />
+                  <div className="nt-card-icon">🌐</div>
+                  <div className="nt-card-label">Internet</div>
+                  {isp && <div className="nt-card-ip">{isp.ip}</div>}
+                  <div className="nt-badge" style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.3)" }}>
+                    ISP PÚBLICO
+                  </div>
+                </div>
+              }
             >
               <OrgBranch
                 card={
                   <GatewayCard
-                    ip={`${main.prefix}.1`}
+                    ip={main.gateway?.ip || `${main.prefix}.1`}
                     hostname={main.gateway?.hostname}
-                    fabricante={main.gateway?.fabricante}
+                    fabricante={main.gateway?.fabricante || main.gateway?.mac}
                   />
                 }
               >
                 {/* Dispositivos directos en la red principal */}
                 {main.devices.map((d, i) => (
-                  <OrgBranch key={d.ip || i} card={<DeviceCard device={d} />} />
+                  <OrgBranch key={d.ip || i} card={<DeviceCard device={d} onVulnClick={onVulnClick} />} />
                 ))}
 
                 {/* Extensores con sus dispositivos */}
@@ -323,16 +458,21 @@ export default function NetworkTree({ devices }) {
                   <OrgBranch
                     key={ext.prefix}
                     card={
-                      <ExtensorCard
-                        ip={`${ext.prefix}.1`}
-                        hostname={ext.gateway?.hostname}
-                        fabricante={ext.gateway?.fabricante}
-                        deviceCount={ext.devices.length}
-                      />
+                      ext.gateway?.tipo === "invisible" ? (
+                        <InvisibleCard />
+                      ) : (
+                        <ExtensorCard
+                          ip={ext.gateway?.ip || `${ext.prefix}.1`}
+                          hostname={ext.gateway?.hostname}
+                          fabricante={ext.gateway?.fabricante || ext.gateway?.mac}
+                          deviceCount={ext.devices.length}
+                          nat_habilitado={ext.gateway?.nat_habilitado}
+                        />
+                      )
                     }
                   >
                     {ext.devices.map((d, j) => (
-                      <OrgBranch key={d.ip || j} card={<DeviceCard device={d} />} />
+                      <OrgBranch key={d.ip || j} card={<DeviceCard device={d} onVulnClick={onVulnClick} />} />
                     ))}
                   </OrgBranch>
                 ))}
@@ -349,6 +489,21 @@ export default function NetworkTree({ devices }) {
         <span className="nt-zoom-label">{Math.round(zoom * 100)}%</span>
         <button className="nt-ctrl-btn" onClick={() => setZoom(z => Math.max(z * 0.85, 0.3))} title="Zoom −">－</button>
         <button className="nt-ctrl-btn" onClick={() => setZoom(1)} title="Restablecer">⊡</button>
+        <button 
+          className="nt-ctrl-btn" 
+          onClick={() => {
+            const root = document.querySelector('.nt-root');
+            if (!document.fullscreenElement) {
+              root.requestFullscreen().catch(err => console.log(err));
+            } else {
+              document.exitFullscreen();
+            }
+          }} 
+          title="Pantalla Completa"
+          style={{ marginLeft: 8 }}
+        >
+          ⛶
+        </button>
       </div>
     </div>
   );
