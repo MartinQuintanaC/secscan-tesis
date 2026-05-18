@@ -105,9 +105,10 @@ class ScannerEngine:
         advertencias = []
         
         try:
-            # Reemplazamos tracert por nmap con un timeout estricto de 30s
+            # Reemplazamos tracert por nmap con un timeout estricto de 30s.
+            # -T2 (Polite): seguro en redes institucionales; evita que switches bloqueen la IP del escáner.
             result = subprocess.run(
-                ['nmap', '--traceroute', '-sn', '8.8.8.8'], 
+                ['nmap', '--traceroute', '-sn', '-T2', '8.8.8.8'], 
                 capture_output=True, text=True, timeout=30
             )
             
@@ -228,8 +229,9 @@ class ScannerEngine:
         """
         print(f"Iniciando descubrimiento de red rápida en: {network_range}...")
         
-        # Usamos -sn -PR para forzar un descubrimiento ARP físico (irrompible por firewalls locales)
-        self.nm.scan(hosts=network_range, arguments='-sn -PR')
+        # -sn: sin escaneo de puertos. -PR: descubrimiento ARP físico (irrompible por firewalls locales).
+        # -T2 (Polite): acordado desde el inicio para redes institucionales. Evita triggering de ACLs.
+        self.nm.scan(hosts=network_range, arguments='-sn -PR -T2')
         
         discovered_devices = []
         found_ips = set()
@@ -291,10 +293,11 @@ class ScannerEngine:
         """
         print(f"Iniciando escaneo profundo en: {ip_target}...")
         
-        # -sV: Nmap intentará descubrir la versión exacta del servicio.
-        # -F: Fast scan (100 puertos top).
-        # -T4 y --min-rate obligan a nmap a ir al límite de red, previendo timeouts.
-        self.nm.scan(hosts=ip_target, arguments='-sV -F -T4 --min-rate 1000 --max-retries 1')
+        # -sV: descubrir la versión exacta del servicio.
+        # -T3: velocidad normal, equilibrio entre rapidez y evasión de bloqueos.
+        # --top-ports 100: los 100 puertos más comunes (reemplaza -F que solo era top-100 sin control).
+        # --max-retries 1: no reintentar puertos cerrados, ahorra tiempo sin perder precisión.
+        self.nm.scan(hosts=ip_target, arguments='-sV -T3 --top-ports 100 --max-retries 1')
         
         if ip_target not in self.nm.all_hosts():
             return {"ip": ip_target, "puertos": []}
