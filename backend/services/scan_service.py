@@ -24,14 +24,29 @@ class ScanService:
 
         # Fase 1: Descubrir esqueleto de red con Traceroute
         topology = self.scanner.fase1_traceroute()
+        advertencias = topology.get("advertencias", [])
 
-        # Fase 2: Escaneo liviano (por ahora Nmap, pronto DHCP/SNMP)
-        dispositivos = self.scanner.discover_network(ip_real)
-        
-        # Guardar todo en topology para que Frontend lo use
+        # Extraer la IP real del Router Principal (puede ser "unknown" en redes blindadas)
+        router_principal_ip = None
+        for hop in topology.get("hops_privados", []):
+            if hop.get("tipo") == "router_principal" and hop.get("ip") != "unknown":
+                router_principal_ip = hop["ip"]
+                break
+
+        # Fase 2: Cascada SNMP → DHCP → Nmap fallback
+        # Se pasa la IP del router y la lista de advertencias compartida
+        dispositivos = self.scanner.discover_network(
+            ip_real,
+            router_principal_ip=router_principal_ip,
+            advertencias=advertencias
+        )
+
+        # Sincronizar advertencias actualizadas de vuelta en topology
+        topology["advertencias"] = advertencias
         topology["devices"] = dispositivos
 
         return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology}
+
 
     def deep_scan(self, ip: str, user_id: str = "", scan_id: str = ""):
         print(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")

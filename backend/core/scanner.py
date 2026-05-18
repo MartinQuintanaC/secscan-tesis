@@ -222,70 +222,228 @@ class ScannerEngine:
             "advertencias": advertencias
         }
     
-    def discover_network(self, network_range: str) -> list:
-        """
-        Realiza un escaneo de descubrimiento (ping sweep) para encontrar dispositivos vivos.
-        El argumento '-sn' le dice a Nmap que NO escanee puertos aún, ahorrando muchísimo tiempo.
-        """
-        print(f"Iniciando descubrimiento de red rápida en: {network_range}...")
-        
-        # -sn: sin escaneo de puertos. -PR: descubrimiento ARP físico (irrompible por firewalls locales).
-        # -T2 (Polite): acordado desde el inicio para redes institucionales. Evita triggering de ACLs.
-        self.nm.scan(hosts=network_range, arguments='-sn -PR -T2')
-        
-        discovered_devices = []
+    # ─────────────────────────────────────────────────────────────────────────
+    # FASE 2: DESCUBRIMIENTO EN CASCADA (SNMP → DHCP → NMAP)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _parse_snmp_output(self, output: str, parent_ip: str, method: str) -> list:
+        """Extrae pares IP+MAC de la salida de los scripts snmp-interfaces / snmp-arp de Nmap."""
+        devices = []
         found_ips = set()
-        
+        ip_pattern  = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+        mac_pattern = re.compile(r'(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}')
+
+        # El script snmp-interfaces lista IPs por adaptador; snmp-arp lista
+        # la tabla ARP. Ambos tienen formato clave: valor.
+        current_ip  = None
+        current_mac = None
+
+        for line in output.splitlines():
+            line = line.strip()
+            ip_match  = ip_pattern.search(line)
+            mac_match = mac_pattern.search(line)
+
+            if ip_match:
+                candidate = ip_match.group(0)
+                if self._is_private_ip(candidate) and candidate != parent_ip:
+                    current_ip = candidate
+            if mac_match:
+                current_mac = mac_match.group(0).upper().replace('-', ':')
+
+            # Cuando tenemos ambos datos en líneas próximas, los guardamos
+            if current_ip and current_mac and current_ip not in found_ips:
+                devices.append({
+                    "ip": current_ip,
+                    "mac": current_mac,
+                    "hostname": "",
+                    "vendor": "",
+                    "discovery_method": method,
+                    "parent_ip": parent_ip
+                })
+                found_ips.add(current_ip)
+                current_ip  = None
+                current_mac = None
+
+        return devices
+
+    def _intento_snmp(self, target_ip: str, network_range: str, advertencias: list) -> list:
+        """
+        Intento 1: SNMP vía scripts nativos de Nmap.
+        Timeout estricto de 10 s; si no responde, añade advertencia y retorna [].
+        """
+        print(f"  [Fase 2 - Intento 1] SNMP Nmap scripts sobre {target_ip}...")
+        try:
+            result = subprocess.run(
+                ['nmap', '-sU', '-p', '161',
+                 '--script', 'snmp-interfaces,snmp-netstat',
+                 '-T2', target_ip],
+                capture_output=True, text=True, timeout=10
+            )
+            output = result.stdout
+
+            if 'open' not in output and '161' not in output:
+                msg = f"SNMP bloqueado en {target_ip} — usando fallback siguiente."
+                advertencias.append(msg)
+                print(f"  [SNMP] Puerto 161 cerrado o filtrado. {msg}")
+                return []
+
+            devices = self._parse_snmp_output(output, target_ip, "snmp_arp")
+            if devices:
+                print(f"  [SNMP] Éxito: {len(devices)} dispositivos extraídos por SNMP.")
+            else:
+                msg = f"SNMP respondió en {target_ip} pero no se encontraron entradas ARP parseables."
+                advertencias.append(msg)
+                print(f"  [SNMP] {msg}")
+            return devices
+
+        except subprocess.TimeoutExpired:
+            msg = f"SNMP timeout (10 s) en {target_ip} — pasando al siguiente intento."
+            advertencias.append(msg)
+            print(f"  [SNMP] {msg}")
+            return []
+        except Exception as e:
+            msg = f"Error SNMP en {target_ip}: {e}"
+            advertencias.append(msg)
+            print(f"  [SNMP] {msg}")
+            return []
+
+    def _intento_dhcp_server(self, network_range: str, advertencias: list) -> list:
+        """
+        Intento 2: Buscar servidor DHCP (UDP 67) en la subred y consultar SNMP sobre él.
+        Timeout: 10 s para el barrido DHCP + 10 s para el SNMP.
+        """
+        print(f"  [Fase 2 - Intento 2] Buscando servidor DHCP en {network_range}...")
+        try:
+            dhcp_result = subprocess.run(
+                ['nmap', '-sU', '-p', '67', '-T2', network_range],
+                capture_output=True, text=True, timeout=10
+            )
+            dhcp_output = dhcp_result.stdout
+
+            # Extraer IPs con el puerto 67 abierto
+            ip_pattern = re.compile(r'Nmap scan report for ([\d\.]+)')
+            state_pattern = re.compile(r'67/udp\s+open')
+
+            dhcp_server_ip = None
+            current_ip = None
+            for line in dhcp_output.splitlines():
+                ip_match = ip_pattern.search(line)
+                if ip_match:
+                    current_ip = ip_match.group(1)
+                if state_pattern.search(line) and current_ip:
+                    dhcp_server_ip = current_ip
+                    break
+
+            if not dhcp_server_ip:
+                msg = f"No se encontró servidor DHCP activo en {network_range}."
+                advertencias.append(msg)
+                print(f"  [DHCP] {msg}")
+                return []
+
+            print(f"  [DHCP] Servidor DHCP encontrado en {dhcp_server_ip}. Consultando SNMP...")
+            devices = self._intento_snmp(dhcp_server_ip, network_range, advertencias)
+            # Reemplazar method tag
+            for d in devices:
+                d["discovery_method"] = "dhcp_server"
+            return devices
+
+        except subprocess.TimeoutExpired:
+            msg = f"Timeout buscando servidor DHCP en {network_range}."
+            advertencias.append(msg)
+            print(f"  [DHCP] {msg}")
+            return []
+        except Exception as e:
+            msg = f"Error buscando servidor DHCP: {e}"
+            advertencias.append(msg)
+            print(f"  [DHCP] {msg}")
+            return []
+
+    def _intento_nmap_fallback(self, network_range: str, parent_ip: str) -> list:
+        """
+        Intento 3: Ping sweep Nmap clásico + rescate de caché ARP local.
+        Mismo código de antes, ahora con campos discovery_method y parent_ip.
+        """
+        print(f"  [Fase 2 - Intento 3] Fallback Nmap Ping Sweep en {network_range}...")
+        self.nm.scan(hosts=network_range, arguments='-sn -PR -T2')
+
+        discovered = []
+        found_ips  = set()
+
         for host in self.nm.all_hosts():
-            # Solo guardamos los hosts que Nmap confirme como encendidos ("up")
             if self.nm[host]['status']['state'] == 'up':
-                
-                # Nmap a veces no puede leer la MAC si estás escaneando localhost u otra subred distinta.
                 mac = "Desconocida"
                 if 'mac' in self.nm[host]['addresses']:
                     mac = self.nm[host]['addresses']['mac']
-                
-                # Suplemento MAC local
                 if host == get_local_ip() and mac == "Desconocida":
                     mac = get_local_mac()
-                    
-                device_info = {
+                discovered.append({
                     "ip": host,
                     "mac": mac,
-                    "hostname": self.nm[host].hostname()
-                }
-                discovered_devices.append(device_info)
+                    "hostname": self.nm[host].hostname(),
+                    "vendor": self.nm[host]['vendor'].get(mac, "") if mac != "Desconocida" else "",
+                    "discovery_method": "nmap_scan",
+                    "parent_ip": parent_ip
+                })
                 found_ips.add(host)
-                
-        # --- SUPLEMENTO ARP SUGERIDO POR EL USUARIO ---
-        print("Ejecutando motor suplementario ARP cache para rescatar dispositivos silenciosos...")
+
+        # Suplemento ARP cache
+        print("  Rescatando dispositivos silenciosos desde caché ARP local...")
         try:
             arp_output = subprocess.check_output('arp -a', shell=True).decode('cp1252', errors='ignore')
-            lines = arp_output.split('\n')
-            
-            # Prefijo para la subred local (Ej: 192.168.18.)
             prefix = network_range.split('/')[0].rsplit('.', 1)[0] + '.'
-            
-            for line in lines:
+            for line in arp_output.split('\n'):
                 parts = line.split()
-                # Normalmente arp arroja: 192.168.18.212   00-11-22-...   dinámico
                 if len(parts) >= 2:
-                    ip_arp = parts[0]
+                    ip_arp  = parts[0]
                     mac_arp = parts[1].replace('-', ':').upper()
-                    
-                    if ip_arp.startswith(prefix) and ip_arp not in found_ips and not ip_arp.endswith('.255'):
-                        if mac_arp != 'FF:FF:FF:FF:FF:FF':
-                            print(f"[!] Dispositivo Silencioso Rescatado de ARP Cache: {ip_arp}")
-                            discovered_devices.append({
-                                "ip": ip_arp,
-                                "mac": mac_arp,
-                                "hostname": "Caché Local ARP"
-                            })
-                            found_ips.add(ip_arp)
+                    if (ip_arp.startswith(prefix) and ip_arp not in found_ips
+                            and not ip_arp.endswith('.255')
+                            and mac_arp != 'FF:FF:FF:FF:FF:FF'):
+                        print(f"  [ARP] Rescatado: {ip_arp}")
+                        discovered.append({
+                            "ip": ip_arp,
+                            "mac": mac_arp,
+                            "hostname": "Caché Local ARP",
+                            "vendor": "",
+                            "discovery_method": "nmap_scan",
+                            "parent_ip": parent_ip
+                        })
+                        found_ips.add(ip_arp)
         except Exception as e:
-            print(f"Advertencia: No se pudo procesar la tabla ARP ({e})")
-                
-        return discovered_devices
+            print(f"  [ARP] Advertencia: {e}")
+
+        return discovered
+
+    def discover_network(self, network_range: str,
+                         router_principal_ip: str = None,
+                         advertencias: list = None) -> list:
+        """
+        FASE 2: Cascada de descubrimiento de dispositivos.
+        Orden: SNMP (router principal) → SNMP (servidor DHCP) → Nmap fallback.
+        Cada dispositivo retornado incluye los campos:
+            ip, mac, hostname, vendor, discovery_method, parent_ip
+        """
+        if advertencias is None:
+            advertencias = []
+        parent_ip = router_principal_ip or network_range.split('/')[0]
+
+        print(f"[FASE 2] Iniciando descubrimiento en cascada. Red: {network_range} | Router: {parent_ip}")
+
+        # ── Intento 1: SNMP sobre el router principal ──────────────────────────
+        if router_principal_ip and router_principal_ip != "unknown":
+            devices = self._intento_snmp(router_principal_ip, network_range, advertencias)
+            if devices:
+                return devices
+
+        # ── Intento 2: Buscar servidor DHCP y consultar SNMP sobre él ─────────
+        devices = self._intento_dhcp_server(network_range, advertencias)
+        if devices:
+            return devices
+
+        # ── Intento 3: Nmap ping sweep (fallback garantizado) ──────────────────
+        advertencias.append("SNMP y DHCP fallaron — usando escaneo Nmap como último recurso.")
+        return self._intento_nmap_fallback(network_range, parent_ip)
+
 
     def scan_ports(self, ip_target: str) -> dict:
         """
