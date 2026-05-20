@@ -5,18 +5,18 @@ const getHeaders = (token) => ({
   ...(token ? { "Authorization": `Bearer ${token}` } : {})
 });
 
-export async function triggerN8nScan(targetIp, token, scanId) {
+export async function triggerN8nScan(targetIp, token, scanId, passive = false) {
   const res = await fetch(`${API_BASE}/api/trigger-scan`, {
     method: "POST",
     headers: getHeaders(token),
     body: JSON.stringify({ 
       target_ip: targetIp,
-      scan_id: scanId 
+      scan_id: scanId,
+      passive
     }),
   });
   return res.json();
 }
-
 
 export async function deepScan(ip, token) {
   const res = await fetch(`${API_BASE}/api/deep-scan/${ip}`, {

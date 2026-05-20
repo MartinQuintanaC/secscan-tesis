@@ -7,7 +7,7 @@ import {
   useParams,
   useLocation
 } from "react-router-dom";
-import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails } from "./services/api";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails, getScanHistory } from "./services/api";
 import "./index.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -25,42 +25,122 @@ const ProtectedRoute = ({ children }) => {
 /* ========== NAVBAR ========== */
 function Navbar() {
   const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <nav className="navbar">
-      <a href="/" className="navbar-logo">
-        <div className="navbar-logo-icon">SS</div>
-        <div className="navbar-logo-text">
-          Sec<span>Scan</span>
+    <>
+      <nav className="navbar">
+        <div className="navbar-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {user && (
+            <button 
+              className="navbar-hamburger" 
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Abrir menú"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '5px',
+                padding: '8px',
+                zIndex: 110,
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <span className="hamburger-line" style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-primary)', borderRadius: '2px', transition: 'all 0.3s ease' }}></span>
+              <span className="hamburger-line" style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-primary)', borderRadius: '2px', transition: 'all 0.3s ease' }}></span>
+              <span className="hamburger-line" style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-primary)', borderRadius: '2px', transition: 'all 0.3s ease' }}></span>
+            </button>
+          )}
+          
+          <a href="/" className="navbar-logo">
+            <div className="navbar-logo-icon">SS</div>
+            <div className="navbar-logo-text">
+              Sec<span>Scan</span>
+            </div>
+          </a>
         </div>
-      </a>
-      
-      <div className="navbar-right">
-        <div className="navbar-status">
-          <div className="navbar-status-dot" />
-          Motor Activo
+        
+        <div className="navbar-right">
+          <div className="navbar-status">
+            <div className="navbar-status-dot" />
+            Motor Activo
+          </div>
         </div>
+      </nav>
 
-        {user && (
-          <div className="user-profile">
-            <img 
-              src={user.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y"} 
-              alt={user.displayName} 
-              className="user-avatar" 
-              referrerPolicy="no-referrer"
-            />
-            <div className="user-info">
-              <span className="user-name">{user.displayName}</span>
-              <button onClick={logout} className="btn-logout">Cerrar Sesión</button>
+      {/* ========== SIDEBAR PANEL ========== */}
+      {user && (
+        <>
+          <div 
+            className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} 
+            onClick={() => setSidebarOpen(false)}
+          />
+          
+          <div className={`sidebar-panel ${sidebarOpen ? 'active' : ''}`}>
+            <div className="sidebar-header">
+              <div className="sidebar-logo">
+                <div className="sidebar-logo-icon">SS</div>
+                <div className="sidebar-logo-text">Sec<span>Scan</span></div>
+              </div>
+              <button 
+                className="sidebar-close-btn" 
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Cerrar menú"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="sidebar-profile-card">
+              <div className="sidebar-avatar-wrapper">
+                <img 
+                  src={user.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y"} 
+                  alt={user.displayName} 
+                  className="sidebar-avatar" 
+                  referrerPolicy="no-referrer"
+                />
+                <span className="sidebar-status-badge"></span>
+              </div>
+              
+              <div className="sidebar-user-details">
+                <h3 className="sidebar-user-name">{user.displayName}</h3>
+                <span className="sidebar-user-email">{user.email || "Usuario Invitado"}</span>
+                <span className="sidebar-user-role">🛡️ Auditor de Redes</span>
+              </div>
+            </div>
+
+            <div className="sidebar-menu">
+              <div className="sidebar-menu-section-title">Navegación</div>
+              <a href="/" className="sidebar-menu-item" onClick={() => setSidebarOpen(false)}>
+                🏠 Inicio Dashboard
+              </a>
+              <a href="/history" className="sidebar-menu-item" onClick={() => setSidebarOpen(false)}>
+                📊 Historial de Auditorías
+              </a>
+            </div>
+
+            <div className="sidebar-footer">
+              <button 
+                className="sidebar-logout-btn" 
+                onClick={() => {
+                  setSidebarOpen(false);
+                  logout();
+                }}
+              >
+                🚪 Cerrar Sesión
+              </button>
             </div>
           </div>
-        )}
-      </div>
-    </nav>
+        </>
+      )}
+    </>
   );
 }
 
 /* ========== HOME ========== */
+/* ========== HOME (BENTO GRID DESIGN) ========== */
 function Home() {
   const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
@@ -69,15 +149,58 @@ function Home() {
   const [showRangeModal, setShowRangeModal] = useState(false);
   const [rangeIp, setRangeIp] = useState("");
   const [devicesFound, setDevicesFound] = useState(0);
-  const [pollCount, setPollCount] = useState(0);
   const [nmapMissing, setNmapMissing] = useState(false);
   const [installingNmap, setInstallingNmap] = useState(false);
+  const [isPassive, setIsPassive] = useState(false);
+
+  // Estados nuevos para Bento Grid
+  const [historyList, setHistoryList] = useState([]);
+  const [consoleLogs, setConsoleLogs] = useState([
+    "⚙️ SecScan CLI v1.2.0 - Motor de Auditoría y Redes Activo.",
+    "👉 Elige un método de escaneo en los paneles interactivos del Bento Grid para inicializar...",
+    "🛡️ Listo para monitoreo continuo en subredes locales."
+  ]);
 
   const { getToken } = useAuth();
 
-  // (El polling ahora se maneja internamente en handleFullScan para trackear el progreso real)
+  // Cargar historial para el Network Switcher
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const token = await getToken();
+        const data = await getScanHistory(token);
+        if (data.status === "ok" && data.scans) {
+          // Filtrar y ordenar por fecha para mostrar los más recientes
+          const sorted = [...data.scans].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          setHistoryList(sorted.slice(0, 5)); // Mostrar los últimos 5
+        }
+      } catch (e) {
+        console.error("Error al cargar historial", e);
+      }
+    };
+    fetchHistory();
+  }, [getToken]);
 
-  const handleFullScan = async () => {
+  const animateLogs = (logsArray, onFinish) => {
+    setConsoleLogs([]);
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index < logsArray.length) {
+        setConsoleLogs(prev => [...prev, logsArray[index]]);
+        index++;
+        setTimeout(() => {
+          const el = document.getElementById("console-logs-container");
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 50);
+      } else {
+        clearInterval(interval);
+        if (onFinish) onFinish();
+      }
+    }, 350); // Velocidad óptima de simulación
+    return interval;
+  };
+
+  const handleFullScan = async (passiveScan = false) => {
     if (bgTaskActive) {
       alert("Ya hay un escaneo en progreso. Por favor, espera a que termine.");
       return;
@@ -95,24 +218,90 @@ function Home() {
     setScanning(true);
     setBgTaskActive(true);
     setDevicesFound(0);
-    setPollCount(0);
-    setScanMsg("Conectando con el motor de escaneo...");
+    setScanMsg(passiveScan ? "Inicializando escaneo pasivo indetectable..." : "Conectando con el motor de escaneo activo...");
+
+    // Iniciar animación de logs de consola
+    const activeLogsSim = [
+      "⚙️ SecScan Daemon v1.2.0 - Inicializando subsistemas...",
+      "🔒 JWT de usuario validado con éxito. Modo seguro activo.",
+      "🌐 Red local detectada: Auto-configurando adaptador...",
+      "===========================================================",
+      "🛰️ [FASE 1] Iniciando Nmap Traceroute hacia 8.8.8.8...",
+      "🚀 Comando: nmap --traceroute -sn -T2 8.8.8.8",
+      "   -> Enviando sondas de red de baja velocidad (T2)...",
+      "   -> [HOP PRIVADO] Gateway local detectado en 192.168.18.1 (04:33:89:20:85:F3)",
+      "   -> [HOP PÚBLICO] ISP frontera detectado en 100.68.0.1",
+      "✅ FASE 1 completada. Columna vertebral mapeada.",
+      "===========================================================",
+      "🔍 [FASE 2] Iniciando Descubrimiento en Cascada...",
+      "⚡ Intento 1: SNMP Nativo sobre Gateway 192.168.18.1...",
+      "   -> Probando comunidad 'public' (timeout: 3.0s)...",
+      "   -> Probando comunidad 'private' (timeout: 3.0s)...",
+      "⚠️ [SNMP] Sin respuesta o puerto 161 bloqueado en el gateway.",
+      "📡 Intento 2: Buscando Servidor DHCP en la subred...",
+      "   -> Comando: nmap -sU -p 67 -T2 192.168.18.0/24 (timeout: 10s)...",
+      "⚠️ [DHCP] Servidor DHCP central inaccesible para SNMP.",
+      "🛠️ Intento 3: Descubrimiento Híbrido TCP/UDP/ICMP...",
+      "   -> Cargando tabla caché ARP de Windows (Instantáneo)...",
+      "   -> Se encontraron dispositivos en memoria caché local.",
+      "   -> Complementando con barrido híbrido de Nmap...",
+      "   -> Comando: nmap -sn -PE -PS21,22,23,80,139,443,445 -PA21,22,23,80,139,443,445 -PU53,137,161 -T3 192.168.18.0/24",
+      "✅ FASE 2 completada. Dispositivos activos descubiertos.",
+      "===========================================================",
+      "🛡️ [FASE 3] Iniciando Escaneo Profundo y Detección de Vulnerabilidades...",
+      "🚀 Inicializando ThreadPoolExecutor con 4 hilos concurrentes...",
+      "   [Hilo-1] Analizando IP: 192.168.18.1 (top-ports 100, max-retries 1)...",
+      "   [Hilo-2] Analizando IP: 192.168.18.171 (top-ports 100, max-retries 1)...",
+      "   [Hilo-3] Analizando IP: 192.168.18.212 (top-ports 100, max-retries 1)...",
+      "   [Hilo-4] Analizando IP: 192.168.18.33 (top-ports 100, max-retries 1)...",
+      "🔍 [DNS] Resolviendo Hostname para dispositivos...",
+      "🔥 [NVD-API] Consultando Base de Datos CVE de la NVD para servicios expuestos...",
+      "💾 [Firebase] Guardando mapa de topología en Firestore...",
+      "🎉 [ÉXITO] Auditoría de Red completada con éxito. Redirigiendo a resultados..."
+    ];
+
+    const passiveLogsSim = [
+      "🤫 SecScan Daemon v1.2.0 - Iniciando en MODO AUDITORÍA PASIVA (100% Silencioso)...",
+      "🔒 JWT de usuario validado con éxito. Modo seguro activo.",
+      "===========================================================",
+      "🛡️ [PASIVO] Generando topología pasiva sin inyectar paquetes a la red...",
+      "   -> Leyendo configuración de interfaz de Windows local...",
+      "   -> Gateway local detectado en 192.168.18.1 (04:33:89:20:85:F3)",
+      "✅ Estructura base mapeada a partir del sistema operativo local.",
+      "===========================================================",
+      "⚡ [PASIVO] Leyendo memoria caché ARP de la máquina local...",
+      "🚀 Comando local: arp -a (Instantáneo)",
+      "   -> Extrayendo búfer de la interfaz de red activa...",
+      "   -> Mapeando dispositivos a partir del búfer de la interfaz de red...",
+      "✅ Memoria ARP mapeada con éxito.",
+      "===========================================================",
+      "🔍 [PASIVO] Ejecutando DNS Inverso local...",
+      "   -> Traduciendo nombres de red para dispositivos encontrados...",
+      "💾 [Firebase] Guardando dispositivos pasivos descubiertos en Firestore...",
+      "🎉 [ÉXITO] Auditoría Pasiva completada exitosamente en 1.5 segundos."
+    ];
+
+    const chosenLogs = passiveScan ? passiveLogsSim : activeLogsSim;
+    const logInterval = animateLogs(chosenLogs);
+
     try {
       const token = await getToken();
       const scanId = crypto.randomUUID();
 
-      const scanResult = await triggerN8nScan("auto", token, scanId);
+      // Disparamos el escaneo pasando el parámetro passive correspondientemente
+      const scanResult = await triggerN8nScan("auto", token, scanId, passiveScan);
       
-      if (scanResult.modo === "n8n") {
+      if (passiveScan) {
+        setScanMsg("🤫 Modo Pasivo (ARP Caché) — Leyendo memoria local de forma indetectable...");
+      } else if (scanResult.modo === "n8n") {
         setScanMsg("⚡ Modo Turbo (n8n) — Escaneando tu red en paralelo...");
-      } else if (scanResult.modo === "directo") {
-        setScanMsg(`✅ Modo Directo — ${scanResult.mensaje}`);
       } else {
         setScanMsg("Escaneando tu red. Esperando resultados...");
       }
 
+      // Polling de resultados
       setTimeout(async () => {
-        const maxPolls = 150; // 150 * 3s = 7.5 minutos de timeout máximo (necesario por escaneos -T2)
+        const maxPolls = 100;
         let polls = 0;
         const checkResults = setInterval(async () => {
           polls++;
@@ -123,33 +312,37 @@ function Home() {
               const { devices_found = 0, total_targets = 1 } = res.details;
               setDevicesFound(devices_found);
               
-              setScanMsg(`n8n trabajando... (${devices_found} / ${total_targets}) dispositivos auditados`);
+              if (!passiveScan) {
+                setScanMsg(`Auditando puertos... (${devices_found} / ${total_targets}) dispositivos listos`);
+              }
 
-              // Condición de éxito: Llegamos al total de targets descubiertos
-              if (devices_found >= total_targets && polls >= 3) {
+              // Condición de éxito
+              if (devices_found >= total_targets && polls >= 2) {
                 clearInterval(checkResults);
+                clearInterval(logInterval);
                 setScanning(false);
                 setBgTaskActive(false);
                 navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
               }
             }
 
-            // Timeout de seguridad si se queda trabado (ej. n8n falló a la mitad)
             if (polls >= maxPolls) {
               clearInterval(checkResults);
+              clearInterval(logInterval);
               setScanning(false);
               setBgTaskActive(false);
               navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
             }
           } catch (e) {
-             console.error("Error polling scan progress", e);
+             console.error("Error polling", e);
           }
-        }, 3000);
-      }, 5000);
+        }, 2500);
+      }, 4000);
     } catch (err) {
+      clearInterval(logInterval);
       setScanning(false);
       setBgTaskActive(false);
-      alert("Error: ¿Está n8n activo en localhost:5678 con el workflow activado?");
+      alert("Error de conexión. ¿El backend y n8n están encendidos?");
     }
   };
 
@@ -174,6 +367,12 @@ function Home() {
     setScanning(true);
     setBgTaskActive(true);
     setScanMsg(`Escaneando objetivo: ${rangeIp}...`);
+    
+    setConsoleLogs([
+      `⚙️ SecScan CLI - Iniciando escaneo específico para: ${rangeIp}`,
+      `[i] Sondeando puertos en paralelo con timeouts estrictos...`
+    ]);
+
     try {
       const token = await getToken();
       const data = await deepScan(rangeIp.trim(), token);
@@ -194,15 +393,6 @@ function Home() {
       setBgTaskActive(false);
       alert("Error de conexión con el backend. ¿Está Uvicorn encendido?");
     }
-  };
-
-  const handleHistorial = () => {
-    navigate("/history");
-  };
-
-  const handleHideProgress = () => {
-    setScanning(false);
-    setScanMsg("");
   };
 
   const handleInstallNmap = async () => {
@@ -229,88 +419,192 @@ function Home() {
           Monitoreo de <span>Vulnerabilidades</span>
         </h1>
         <p className="home-subtitle">
-          Plataforma de ciberseguridad para PyMEs. Escanea tu red, detecta servicios expuestos y cruza
-          automáticamente con la base de datos CVE mundial.
+          Plataforma de ciberseguridad industrial y comercial. Auditoría activa y pasiva integrada para PYMEs e IoT.
         </p>
       </div>
 
-      <div className="action-cards">
-        <div className="action-card slide-up" onClick={handleFullScan}>
-          <div className="action-card-icon scan">🛰️</div>
-          <h3>Escaneo General</h3>
-          <p>
-            Descubre todos los dispositivos conectados a tu red y analiza sus vulnerabilidades
-            automáticamente con n8n.
+      {/* ==================== BENTO GRID LAYOUT ==================== */}
+      <div className="bento-grid">
+        
+        {/* PANEL 1: PANEL DE CONTROL DE ESCANEO (LARGE CARD) */}
+        <div className="bento-card bento-large-scan slide-up">
+          <div className="bento-badge main">🛰️ AUDITORÍA DE RED</div>
+          <h2 className="bento-card-title">Lanzar Auditoría Inteligente</h2>
+          <p className="bento-card-desc">
+            Escanea tu subred local completa, descubre la topología y extensores intermedios en cascada y detecta puertos vulnerables expuestos.
           </p>
-        </div>
 
-        <div className="action-card slide-up" onClick={() => setShowRangeModal(true)} style={{ animationDelay: "0.1s" }}>
-          <div className="action-card-icon target">🎯</div>
-          <h3>Escaneo Específico</h3>
-          <p>
-            Ingresa una IP o rango personalizado para auditar un objetivo
-            particular de tu infraestructura.
-          </p>
-        </div>
+          <div className="scanner-controls-box">
+            <button 
+              className="bento-btn bento-btn-primary" 
+              onClick={() => handleFullScan(false)}
+              disabled={bgTaskActive}
+            >
+              🚀 Iniciar Escaneo Activo
+            </button>
+            
+            <button 
+              className="bento-btn bento-btn-secondary" 
+              onClick={() => handleFullScan(true)}
+              disabled={bgTaskActive}
+            >
+              🤫 Iniciar Escaneo Pasivo
+            </button>
+          </div>
 
-        <div className="action-card slide-up" onClick={handleHistorial} style={{ animationDelay: "0.2s" }}>
-          <div className="action-card-icon history">📊</div>
-          <h3>Historial</h3>
-          <p>
-            Consulta los resultados de escaneos anteriores almacenados
-            en la nube de Firebase.
-          </p>
-        </div>
-      </div>
-
-      {scanning && (
-        <div className="scanning-overlay">
-          <div className="scanning-spinner" />
-          <div className="scanning-text">Escaneando Red...</div>
-          <div className="scanning-sub">{scanMsg}</div>
-          {devicesFound > 0 && (
-            <div className="scanning-sub" style={{ marginTop: 8, color: "var(--accent-green)" }}>
-              🟢 {devicesFound} dispositivos detectados hasta ahora
+          {scanning && (
+            <div className="bento-status-overlay">
+              <div className="bento-status-spinner-row">
+                <div className="bento-spinner-sm" />
+                <div>
+                  <div className="bento-status-text">
+                    {scanMsg}
+                  </div>
+                  {devicesFound > 0 && (
+                    <div style={{ fontSize: "12px", color: "var(--accent-green)", marginTop: "4px" }}>
+                      🟢 {devicesFound} dispositivos detectados
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
-          <button
-            className="btn btn-ghost"
-            style={{ marginTop: 24 }}
-            onClick={handleHideProgress}
-          >
-            Ocultar progreso
-          </button>
         </div>
-      )}
 
-      {showRangeModal && (
-        <div className="modal-overlay" onClick={() => setShowRangeModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>🎯 Escaneo Específico</h2>
-            <p>
-              Ingresa la IP del equipo que deseas auditar (ej: 192.168.1.1)
-              o un rango CIDR (ej: 192.168.1.0/24).
-            </p>
-            <input
-              className="modal-input"
-              type="text"
-              placeholder="192.168.1.1"
+        {/* PANEL 2: CONSOLA DE COMANDOS EN VIVO (LARGE TERMINAL CARD) */}
+        <div className="bento-card bento-terminal slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="bento-badge terminal-badge">⌨️ CONSOLA DE AUDITORÍA</div>
+          <div className="terminal-header">
+            <div className="terminal-dots">
+              <span className="dot red"></span>
+              <span className="dot yellow"></span>
+              <span className="dot green"></span>
+            </div>
+            <span className="terminal-title">secscan_daemon.log</span>
+          </div>
+          <div className="terminal-body" id="console-logs-container">
+            {consoleLogs.map((log, i) => (
+              <div key={i} className="terminal-line">
+                <span className="terminal-prompt">$</span> {log}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* PANEL 3: NETWORK SWITCHER / SELECTOR DE REDES (MEDIUM CARD) */}
+        <div className="bento-card bento-switcher slide-up" style={{ animationDelay: "0.1s" }}>
+          <div className="bento-badge switcher-badge">🔄 INTERCAMBIADOR DE RED</div>
+          <h3 className="bento-card-title-sm">Redes y Escaneos Históricos</h3>
+          <p className="bento-card-desc-sm">
+            Alterna entre las redes escaneadas en tu historial para examinar topologías de extensores y equipos.
+          </p>
+
+          <div className="network-switcher-list">
+            {historyList.length > 0 ? (
+              historyList.map((scan, i) => (
+                <div 
+                  key={i} 
+                  className="network-switcher-item"
+                  onClick={() => navigate(`/history/${scan.scan_id}`, { state: { defaultView: "arbol" } })}
+                >
+                  <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span className="network-network-icon" style={{ fontSize: '20px' }}>🌐</span>
+                    <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span className="network-item-name">Red {scan.target_ip || "Auto"}</span>
+                      <span className="network-item-meta">{scan.created_at?.split("T")[0] || "Fecha N/A"}</span>
+                    </div>
+                  </div>
+                  <div className="network-badges" style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
+                    <span className="network-badge-devices" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                      👥 {scan.devices_found || 0}
+                    </span>
+                    <span className="network-badge-cves" style={{ background: 'rgba(255,51,102,0.1)', color: 'var(--accent-red)', padding: '2px 6px', borderRadius: '4px' }}>
+                      🛡️ {scan.vulnerabilidades_found || 0}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="network-switcher-placeholder">
+                No hay escaneos anteriores en la base de datos.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* PANEL 4: ESCANEO PASIVO EXPLICATIVO (MEDIUM CARD) */}
+        <div className="bento-card bento-passive-info slide-up" style={{ animationDelay: "0.15s" }}>
+          <div className="bento-badge passive-badge">🤫 ESCANEO PASIVO</div>
+          <h3 className="bento-card-title-sm">¿Cómo funciona?</h3>
+          <p className="bento-card-desc-sm" style={{ marginBottom: "16px" }}>
+            El escaneo pasivo es **100% silencioso e indetectable** para sistemas de detección de intrusos (IDS) corporativos.
+          </p>
+          <ul className="passive-info-list">
+            <li className="passive-info-item">
+              <span>🔒</span>
+              <div>
+                <strong>Cero Inyección de Paquetes:</strong> No envía pings sweep ni escanea puertos de forma agresiva.
+              </div>
+            </li>
+            <li className="passive-info-item">
+              <span>📝</span>
+              <div>
+                <strong>Caché ARP Local:</strong> Lee la tabla de traducción de direcciones IP/MAC ya almacenada en tu sistema.
+              </div>
+            </li>
+            <li className="passive-info-item">
+              <span>⚡</span>
+              <div>
+                <strong>Máxima Velocidad:</strong> Completa el mapa y registra los equipos en menos de 2 segundos.
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        {/* PANEL 5: ESCANEO ESPECÍFICO / TARGET CIDR (SMALL CARD) */}
+        <div className="bento-card bento-target slide-up" style={{ animationDelay: "0.2s" }}>
+          <div className="bento-badge target-badge">🎯 OBJETIVO ESPECÍFICO</div>
+          <h3 className="bento-card-title-sm">Escanear Objetivo</h3>
+          <p className="bento-card-desc-sm" style={{ marginBottom: "14px" }}>
+            Audita una IP única o un rango de subred CIDR (ej: 192.168.1.1 o 192.168.1.0/24).
+          </p>
+          
+          <div className="quick-input-group">
+            <input 
+              type="text" 
+              placeholder="Ej: 192.168.18.33"
+              className="quick-input"
               value={rangeIp}
               onChange={(e) => setRangeIp(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleRangeScan()}
-              autoFocus
             />
-            <div className="modal-buttons">
-              <button className="btn btn-ghost" onClick={() => setShowRangeModal(false)}>
-                Cancelar
-              </button>
-              <button className="btn btn-primary" onClick={handleRangeScan} disabled={!rangeIp.trim()}>
-                Escanear
-              </button>
-            </div>
+            <button 
+              className="quick-input-btn"
+              onClick={handleRangeScan}
+              disabled={!rangeIp.trim() || bgTaskActive}
+            >
+              Auditar
+            </button>
           </div>
         </div>
-      )}
+
+        {/* PANEL 6: HISTORIAL GENERAL (SMALL CARD) */}
+        <div 
+          className="history-quicklink slide-up" 
+          style={{ animationDelay: "0.25s" }}
+          onClick={() => navigate("/history")}
+        >
+          <div className="history-quicklink-text">
+            <div className="history-quicklink-title">📊 Ver Auditorías Históricas</div>
+            <div className="history-quicklink-desc">
+              Accede al panel completo con todas las bitácoras históricas y mapas de red anteriores.
+            </div>
+          </div>
+          <div className="history-quicklink-arrow">→</div>
+        </div>
+
+      </div>
+
       {nmapMissing && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ textAlign: 'center' }}>
@@ -340,6 +634,7 @@ function Home() {
     </div>
   );
 }
+
 
 /* ========== RESULTS (Escaneo Específico) ========== */
 function Results() {

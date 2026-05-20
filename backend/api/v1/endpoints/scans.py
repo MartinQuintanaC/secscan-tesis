@@ -130,21 +130,37 @@ def trigger_scan(request: ScanRequest, authorization: str = Header(None), user: 
     dispositivos = result.get("dispositivos", [])
     print(f"[BFF] Dispositivos encontrados: {len(dispositivos)}")
     
+    import concurrent.futures
+
     escaneados = 0
     total_vulnerabilidades = 0
     
-    for dispositivo in dispositivos:
+    def scan_single_device(dispositivo):
         ip = dispositivo.get("ip", "")
-        if ip:
-            try:
-                # Marcar scan como procesado antes de guardar
-                db_service.mark_scan_processed(user_id, scan_id, ip)
-                detalle = scan_service.deep_scan(ip, user_id, scan_id)
-                escaneados += 1
-                total_vulnerabilidades += detalle.get("total_vulnerabilidades", 0)
-                print(f"[BFF] GUARDADO: {ip} para user: {user_id}")
-            except Exception as e:
-                print(f"[BFF] Error escaneando {ip}: {e}")
+        if not ip:
+            return None
+        try:
+            # Marcar scan como procesado antes de guardar
+            db_service.mark_scan_processed(user_id, scan_id, ip)
+            detalle = scan_service.deep_scan(ip, user_id, scan_id)
+            print(f"[BFF] GUARDADO: {ip} para user: {user_id}")
+            return detalle
+        except Exception as e:
+            print(f"[BFF] Error escaneando {ip}: {e}")
+            return None
+
+    # Filtrar dispositivos con IP válida
+    dispositivos_validos = [d for d in dispositivos if d.get("ip")]
+
+    # Paralelizar en lotes controlados de 4 workers para evitar saturar Nmap en Windows
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        resultados = list(executor.map(scan_single_device, dispositivos_validos))
+
+    # Computar acumulados de escaneos exitosos
+    for r in resultados:
+        if r is not None:
+            escaneados += 1
+            total_vulnerabilidades += r.get("total_vulnerabilidades", 0)
     
     # Finalizar el escaneo actualizando sus metadatos globales
     import datetime

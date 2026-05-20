@@ -268,44 +268,92 @@ class ScannerEngine:
 
     def _intento_snmp(self, target_ip: str, network_range: str, advertencias: list) -> list:
         """
-        Intento 1: SNMP vía scripts nativos de Nmap.
-        Timeout estricto de 10 s; si no responde, añade advertencia y retorna [].
+        Intento 1: SNMP nativo vía pysnmp.
+        Consulta la tabla ARP (ipNetToMediaPhysAddress) con OID '1.3.6.1.2.1.4.22.1.2'.
+        Timeout estricto de 3 s; si no responde, añade advertencia y retorna [].
         """
-        print(f"  [Fase 2 - Intento 1] SNMP Nmap scripts sobre {target_ip}...")
+        print(f"  [Fase 2 - Intento 1] SNMP Nativo (pysnmp) sobre {target_ip}...")
+        
         try:
-            result = subprocess.run(
-                ['nmap', '-sU', '-p', '161',
-                 '--script', 'snmp-interfaces,snmp-netstat',
-                 '-T2', target_ip],
-                capture_output=True, text=True, timeout=10
+            from pysnmp.hlapi import (
+                SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
+                ObjectType, ObjectIdentity, nextCmd
             )
-            output = result.stdout
-
-            if 'open' not in output and '161' not in output:
-                msg = f"SNMP bloqueado en {target_ip} — usando fallback siguiente."
-                advertencias.append(msg)
-                print(f"  [SNMP] Puerto 161 cerrado o filtrado. {msg}")
-                return []
-
-            devices = self._parse_snmp_output(output, target_ip, "snmp_arp")
-            if devices:
-                print(f"  [SNMP] Éxito: {len(devices)} dispositivos extraídos por SNMP.")
-            else:
-                msg = f"SNMP respondió en {target_ip} pero no se encontraron entradas ARP parseables."
-                advertencias.append(msg)
-                print(f"  [SNMP] {msg}")
-            return devices
-
-        except subprocess.TimeoutExpired:
-            msg = f"SNMP timeout (10 s) en {target_ip} — pasando al siguiente intento."
+        except ImportError as e:
+            msg = f"Librería pysnmp no instalada. Fallando al fallback. Error: {e}"
             advertencias.append(msg)
-            print(f"  [SNMP] {msg}")
+            print(f"  [SNMP Error] {msg}")
             return []
-        except Exception as e:
-            msg = f"Error SNMP en {target_ip}: {e}"
-            advertencias.append(msg)
-            print(f"  [SNMP] {msg}")
-            return []
+
+        devices = []
+        found_ips = set()
+        communities = ["public", "private"]
+        
+        for community in communities:
+            print(f"    -> Probando comunidad '{community}'...")
+            try:
+                # OID: ipNetToMediaPhysAddress (1.3.6.1.2.1.4.22.1.2)
+                # Formato devuelto: 1.3.6.1.2.1.4.22.1.2.[ifIndex].[IP] = [MAC en bytes]
+                for (errorIndication, errorStatus, errorIndex, varBinds) in nextCmd(
+                    SnmpEngine(),
+                    CommunityData(community),
+                    UdpTransportTarget((target_ip, 161), timeout=3.0, retries=1),
+                    ContextData(),
+                    ObjectType(ObjectIdentity('1.3.6.1.2.1.4.22.1.2')),
+                    lexicographicMode=False
+                ):
+                    if errorIndication:
+                        # Error de transporte / timeout / puerto cerrado
+                        break
+                    if errorStatus:
+                        # Error SNMP (noSuchName, etc.)
+                        break
+                    
+                    for varBind in varBinds:
+                        oid = varBind[0].prettyPrint()
+                        val = varBind[1]
+                        
+                        # Extraer la IP del final del OID (los últimos 4 componentes octetos)
+                        parts = oid.split('.')
+                        if len(parts) >= 4:
+                            candidate_ip = ".".join(parts[-4:])
+                            # Validar que es una IP privada y no es el router mismo
+                            if self._is_private_ip(candidate_ip) and candidate_ip != target_ip:
+                                # Convertir MAC en bytes a formato estándar XX:XX:XX:XX:XX:XX
+                                try:
+                                    raw_bytes = val.asOctets()
+                                    if len(raw_bytes) == 6:
+                                        mac_str = ":".join(f"{b:02X}" for b in raw_bytes)
+                                    else:
+                                        mac_str = val.prettyPrint().upper().replace('-', ':')
+                                        if mac_str.startswith("0X"):
+                                            hex_val = mac_str[2:]
+                                            mac_str = ":".join(hex_val[i:i+2] for i in range(0, len(hex_val), 2))
+                                except Exception:
+                                    mac_str = "Desconocida"
+                                    
+                                if candidate_ip not in found_ips:
+                                    devices.append({
+                                        "ip": candidate_ip,
+                                        "mac": mac_str,
+                                        "hostname": "",
+                                        "vendor": "",
+                                        "discovery_method": "snmp_arp",
+                                        "parent_ip": target_ip
+                                    })
+                                    found_ips.add(candidate_ip)
+                
+                if devices:
+                    print(f"  [SNMP] Éxito: {len(devices)} dispositivos extraídos con comunidad '{community}'.")
+                    return devices
+                    
+            except Exception as e:
+                print(f"    [SNMP] Error con comunidad '{community}': {e}")
+                
+        msg = f"SNMP sin respuesta o bloqueado en {target_ip} con comunidades comunes."
+        advertencias.append(msg)
+        print(f"  [SNMP] {msg}")
+        return []
 
     def _intento_dhcp_server(self, network_range: str, advertencias: list) -> list:
         """
@@ -408,12 +456,18 @@ class ScannerEngine:
 
         print(f"  [ARP] Dispositivos encontrados en caché ARP: {len(discovered)}")
 
-        # ── Fuente 2: Nmap sin raw sockets (complemento, no requiere admin) ──
-        # -sn -PE: usa ICMP echo (no ARP raw), funciona sin admin en Windows.
-        # -T2: polite, seguro en redes institucionales.
+        # ── Fuente 2: Nmap sin raw sockets (descubrimiento híbrido TCP/UDP/ICMP) ──
+        # -sn -PE: usa ICMP echo.
+        # -PS21,22,23,80,139,443,445,9100,8080: TCP SYN ping (cobertura IT e IoT).
+        # -PA21,22,23,80,139,443,445,9100,8080: TCP ACK ping (evade firewalls stateful).
+        # -PU53,137,161: UDP ping (bypasses UDP-only blocks / targets NetBIOS, DNS, SNMP).
+        # -T3: Velocidad normal y robusta.
         try:
-            print(f"  [Nmap] Complementando con ICMP ping sweep (-sn -PE -T2)...")
-            self.nm.scan(hosts=network_range, arguments='-sn -PE -T2')
+            print(f"  [Nmap] Complementando con descubrimiento híbrido TCP/UDP/ICMP...")
+            self.nm.scan(
+                hosts=network_range, 
+                arguments='-sn -PE -PS21,22,23,80,139,443,445,9100,8080 -PA21,22,23,80,139,443,445,9100,8080 -PU53,137,161 -T3'
+            )
 
             for host in self.nm.all_hosts():
                 if self.nm[host]['status']['state'] == 'up' and host not in found_ips:
@@ -422,7 +476,7 @@ class ScannerEngine:
                         mac = self.nm[host]['addresses']['mac']
                     if host == get_local_ip() and mac == "Desconocida":
                         mac = get_local_mac()
-                    print(f"  [Nmap] Encontrado por ICMP: {host}")
+                    print(f"  [Nmap] Encontrado por descubrimiento híbrido: {host}")
                     discovered.append({
                         "ip": host,
                         "mac": mac,
@@ -433,7 +487,7 @@ class ScannerEngine:
                     })
                     found_ips.add(host)
         except Exception as e:
-            print(f"  [Nmap] Error en ping sweep: {e}")
+            print(f"  [Nmap] Error en descubrimiento híbrido: {e}")
 
         # Agregar la propia PC si no fue detectada
         local_ip = get_local_ip()
@@ -468,18 +522,39 @@ class ScannerEngine:
         print(f"[FASE 2] Iniciando descubrimiento en cascada. Red: {network_range} | Router: {parent_ip}")
 
         # ── Intento 1: SNMP sobre el router principal ──────────────────────────
+        snmp_exitosa = False
         if router_principal_ip and router_principal_ip != "unknown":
             devices = self._intento_snmp(router_principal_ip, network_range, advertencias)
             if devices:
                 return devices
+            snmp_exitosa = False
+        else:
+            snmp_exitosa = False
+
+        # Comprobar si estamos escaneando una subred remota (detrás de un salto / NAT)
+        es_subred_externa = False
+        try:
+            local_cidr = get_local_cidr()
+            if ipaddress.ip_network(network_range, strict=False) != ipaddress.ip_network(local_cidr, strict=False):
+                es_subred_externa = True
+        except Exception:
+            pass
+
+        # Si es una subred externa y el SNMP falló, estamos ante una Frontera Opaca (NAT / Firewall total)
+        # Abortamos de inmediato para evitar colgar el escáner con pings que el NAT descartará
+        if es_subred_externa and not snmp_exitosa:
+            msg = f"Frontera Opaca Detectada en {parent_ip}: La subred externa {network_range} está aislada por NAT/Firewall y SNMP está inactivo. Abortando escaneo en esta rama para evitar demoras y falsos negativos."
+            advertencias.append(msg)
+            print(f"  [ALERTA] {msg}")
+            return []
 
         # ── Intento 2: Buscar servidor DHCP y consultar SNMP sobre él ─────────
         devices = self._intento_dhcp_server(network_range, advertencias)
         if devices:
             return devices
 
-        # ── Intento 3: Nmap ping sweep (fallback garantizado) ──────────────────
-        advertencias.append("SNMP y DHCP fallaron — usando escaneo Nmap como último recurso.")
+        # ── Intento 3: Nmap ping sweep híbrido (fallback local garantizado) ────
+        advertencias.append("SNMP y DHCP fallaron — usando descubrimiento híbrido Nmap como último recurso.")
         return self._intento_nmap_fallback(network_range, parent_ip)
 
 

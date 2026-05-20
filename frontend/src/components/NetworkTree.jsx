@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 
 /* ─── UTILIDADES ────────────────────────────────────────────── */
 function isPrivateIP(ip) {
@@ -413,11 +413,21 @@ export default function NetworkTree({ devices, topology, onVulnClick }) {
     e.currentTarget.style.cursor = "grab";
   }, []);
 
-  /* Zoom con rueda */
-  const onWheel = useCallback((e) => {
-    e.preventDefault();
-    setZoom(z => Math.min(Math.max(z * (e.deltaY > 0 ? 0.92 : 1.08), 0.3), 2.5));
-  }, []);
+  /* Zoom con rueda nativo no pasivo para rendimiento y fluidez óptimos */
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      setZoom(z => Math.min(Math.max(z * (e.deltaY > 0 ? 0.92 : 1.08), 0.3), 2.5));
+    };
+
+    vp.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      vp.removeEventListener("wheel", handleWheel);
+    };
+  }, [tree]);
 
   if (!tree) {
     return (
@@ -485,7 +495,6 @@ export default function NetworkTree({ devices, topology, onVulnClick }) {
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
-        onWheel={onWheel}
         style={{ cursor: "grab" }}
       >
         <div className="nt-canvas" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>

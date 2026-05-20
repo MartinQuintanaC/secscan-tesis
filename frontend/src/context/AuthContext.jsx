@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
@@ -35,10 +35,10 @@ export const AuthProvider = ({ children }) => {
   const logout = () => signOut(auth);
 
   // Obtiene el ID Token de Firebase para enviarlo al Backend
-  const getToken = async () => {
+  const getToken = useCallback(async () => {
     if (!auth.currentUser) return null;
     return await auth.currentUser.getIdToken();
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loginWithGoogle, logout, getToken, loading }}>
