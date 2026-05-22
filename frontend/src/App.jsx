@@ -277,7 +277,7 @@ function Home() {
                 setScanning(false);
                 setBgTaskActive(false);
                 setTimeout(() => {
-                  navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
+                  navigate(`/history/${scanId}`, { state: { defaultView: "consola" } });
                 }, 1000); // Pequeño delay para ver el último log de éxito
               }
             }
@@ -286,7 +286,7 @@ function Home() {
               clearInterval(checkResults);
               setScanning(false);
               setBgTaskActive(false);
-              navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
+              navigate(`/history/${scanId}`, { state: { defaultView: "consola" } });
             }
           } catch (e) {
              console.error("Error polling", e);
@@ -710,6 +710,7 @@ function Historial() {
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [vista, setVista] = useState(location.state?.defaultView || "lista");
+  const [scanLogs, setScanLogs] = useState([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -728,6 +729,9 @@ function Historial() {
         if (detailsData.status === "ok" && detailsData.details) {
            topo = detailsData.details.topology;
            status = detailsData.details.status || "completed";
+           if (detailsData.details.logs) {
+             setScanLogs(detailsData.details.logs);
+           }
         }
       } else {
         // Fallback al legacy
@@ -849,7 +853,41 @@ function Historial() {
         >
           🌳 Vista Árbol
         </button>
+        <button
+          className={`view-toggle-btn${vista === "consola" ? " active" : ""}`}
+          onClick={() => setVista("consola")}
+        >
+          ⌨️ Consola
+        </button>
       </div>
+
+      {/* ===== VISTA CONSOLA ===== */}
+      {vista === "consola" && (
+        <div className="bento-card bento-terminal slide-up" style={{ marginTop: "20px" }}>
+          <div className="bento-badge terminal-badge">⌨️ CONSOLA DE AUDITORÍA</div>
+          <div className="terminal-header">
+            <div className="terminal-dots">
+              <span className="dot red"></span>
+              <span className="dot yellow"></span>
+              <span className="dot green"></span>
+            </div>
+            <span className="terminal-title">secscan_daemon.log</span>
+          </div>
+          <div className="terminal-body" id="historial-console-container" style={{ minHeight: "500px", maxHeight: "800px" }}>
+            {scanLogs.length > 0 ? (
+              scanLogs.map((log, i) => (
+                <div key={i} className="terminal-line">
+                  <span className="terminal-prompt">$</span> {log}
+                </div>
+              ))
+            ) : (
+              <div className="terminal-line" style={{ color: "var(--text-gray)" }}>
+                No hay logs registrados para esta auditoría.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ===== VISTA ÁRBOL ===== */}
       {vista === "arbol" && (
