@@ -1688,3 +1688,331 @@ ul { list-style: none; padding: 0; margin: 0; }
 --accent-red: var(--red-400);
 --accent-green: var(--green-400);
 --accent-red-dim: rgba(248,113,113,0.15);
+
+/* ============================================================
+   NETWORK TREE — COMPLETE OVERRIDE (Horizontal Org-Chart)
+   ============================================================ */
+
+/* Root container */
+.nt-root {
+  position: relative;
+  width: 100%;
+  min-height: 600px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Legend bar */
+.nt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: rgba(0,0,0,0.3);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  z-index: 5;
+}
+.nt-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Viewport */
+.nt-viewport {
+  flex: 1;
+  overflow: auto;
+  cursor: grab;
+  user-select: none;
+  padding: 40px 48px 80px;
+  min-height: 500px;
+}
+.nt-viewport:active { cursor: grabbing; }
+
+/* Zoomable canvas */
+.nt-canvas {
+  display: inline-block;
+  min-width: max-content;
+  will-change: transform;
+  transform-origin: top center;
+}
+
+/* ── ORG-CHART TREE LAYOUT ───────────────────────────────── */
+
+/* Root UL: vertical spine (Internet → Gateway) */
+.nt-children--root {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+}
+
+/* All other ULs: horizontal spread of siblings */
+.nt-children {
+  list-style: none;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  position: relative;
+}
+
+/* Each branch is a vertical column */
+.nt-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  list-style: none;
+  padding: 0 12px;
+}
+
+/* ── CONNECTOR LINES ─────────────────────────────────────── */
+
+/* Vertical line FROM parent card DOWN (rendered above nt-children) */
+.nt-children:not(.nt-children--root) {
+  margin-top: 0;
+  padding-top: 20px; /* space for connector */
+}
+
+/* Vertical drop from card to the horizontal bar */
+.nt-children:not(.nt-children--root)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 20px;
+  background: rgba(168, 85, 247, 0.5);
+  z-index: 1;
+}
+
+/* Horizontal bar connecting siblings */
+.nt-children:not(.nt-children--root) > .nt-branch::before {
+  content: '';
+  position: absolute;
+  top: 0;  /* at the padding-top level */
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(168, 85, 247, 0.3);
+}
+/* First child: bar only on right half */
+.nt-children:not(.nt-children--root) > .nt-branch:first-child::before {
+  left: 50%;
+}
+/* Last child: bar only on left half */
+.nt-children:not(.nt-children--root) > .nt-branch:last-child::before {
+  right: 50%;
+}
+/* Only child: no horizontal bar needed */
+.nt-children:not(.nt-children--root) > .nt-branch:only-child::before {
+  display: none;
+}
+
+/* Vertical drop from horizontal bar to each child card */
+.nt-children:not(.nt-children--root) > .nt-branch::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 20px;
+  background: rgba(168, 85, 247, 0.4);
+  z-index: 1;
+}
+
+/* Vertical line from root branch card to its child */
+.nt-children--root > .nt-branch::before,
+.nt-children--root > .nt-branch::after {
+  display: none;
+}
+
+/* Connector between root cards (Internet→Gateway) */
+.nt-children--root > .nt-branch + .nt-branch {
+  margin-top: 0;
+}
+.nt-children--root > .nt-branch + .nt-branch > .nt-card::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 24px;
+  background: rgba(168, 85, 247, 0.5);
+}
+
+/* ── CARDS ──────────────────────────────────────────────── */
+.nt-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: 14px;
+  padding: 14px 18px;
+  min-width: 148px;
+  max-width: 190px;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.nt-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-purple);
+  border-color: var(--purple-border);
+}
+.nt-card--internet { border-color: rgba(0, 212, 255, 0.45); }
+.nt-card--gateway  { border-color: rgba(123, 159, 255, 0.45); }
+.nt-card--extensor { border-color: rgba(243, 156, 18, 0.45); }
+.nt-card--invisible { border-color: rgba(255,255,255,0.12); }
+.nt-card--device   {
+  border-top: 2px solid var(--risk-color, rgba(168,85,247,0.4));
+  border-left-color: var(--border-base);
+  border-right-color: var(--border-base);
+  border-bottom-color: var(--border-base);
+}
+
+/* Spacing between card and its children group */
+.nt-branch > .nt-card { margin-bottom: 0; }
+.nt-branch > .nt-children { margin-top: 0; }
+
+/* Glow inside card */
+.nt-card-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.45;
+}
+
+/* Card text */
+.nt-card-icon     { font-size: 24px; margin-bottom: 5px; line-height: 1; }
+.nt-card-label    { font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 3px; }
+.nt-card-ip       { font-size: 11px; font-family: 'Fira Code', monospace; color: var(--cyan-400); margin-bottom: 3px; }
+.nt-card-hostname { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; word-break: break-all; }
+.nt-card-fab      { font-size: 10px; color: var(--text-muted); margin-bottom: 5px; }
+
+/* Badge */
+.nt-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+/* ── DEVICE WRAPPER ─────────────────────────────────────── */
+.nt-device-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── PORTS POPUP ─────────────────────────────────────────── */
+.nt-ports-popup {
+  background: var(--bg-surface);
+  border: 1px solid var(--purple-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 200px;
+  max-width: 260px;
+  margin-top: 8px;
+  box-shadow: var(--shadow-purple);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+  position: relative;
+}
+.nt-port-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.15s;
+}
+.nt-port-row:last-child { border-bottom: none; }
+.nt-port-row:hover { background: rgba(168,85,247,0.08); }
+.nt-port-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.nt-port-num   { font-family: 'Fira Code', monospace; font-weight: 700; color: var(--cyan-400); font-size: 11px; }
+.nt-port-svc   { color: var(--text-secondary); font-size: 11px; flex: 1; }
+.nt-port-ver   { font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace; }
+
+/* ── CONTROLS ────────────────────────────────────────────── */
+.nt-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(7, 8, 15, 0.9);
+  border: 1px solid var(--border-base);
+  border-radius: 10px;
+  padding: 6px 10px;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.nt-ctrl-btn {
+  width: 30px;
+  height: 30px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: 7px;
+  color: var(--text-primary);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+.nt-ctrl-btn:hover { background: var(--purple-dim); border-color: var(--purple-border); }
+.nt-zoom-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: 'Fira Code', monospace;
+  min-width: 38px;
+  text-align: center;
+}
+
+/* Empty tree state */
+.nt-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  color: var(--text-muted);
+  gap: 12px;
+  font-size: 15px;
+  text-align: center;
+}
