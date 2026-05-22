@@ -155,6 +155,16 @@ class DatabaseService:
             "devices_found": firestore.Increment(amount)
         }, merge=True)
 
+    def append_scan_log(self, user_id: str, scan_id: str, message: str):
+        """Añade una línea de log al arreglo 'logs' del documento de escaneo de forma atómica."""
+        from firebase_admin import firestore
+        import datetime
+        user_ref = self._get_user_ref(user_id)
+        entry = f"[{datetime.datetime.utcnow().strftime('%H:%M:%S')}] {message}"
+        user_ref.collection("scans").document(scan_id).set({
+            "logs": firestore.ArrayUnion([entry])
+        }, merge=True)
+
     def create_user_profile(self, user_id: str, email: str = ""):
         """Create user profile when they first login."""
         user_ref = self._get_user_ref(user_id)

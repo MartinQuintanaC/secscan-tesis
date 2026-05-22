@@ -220,88 +220,36 @@ function Home() {
     setDevicesFound(0);
     setScanMsg(passiveScan ? "Inicializando escaneo pasivo indetectable..." : "Conectando con el motor de escaneo activo...");
 
-    // Iniciar animación de logs de consola
-    const activeLogsSim = [
-      "⚙️ SecScan Daemon v1.2.0 - Inicializando subsistemas...",
-      "🔒 JWT de usuario validado con éxito. Modo seguro activo.",
-      "🌐 Red local detectada: Auto-configurando adaptador...",
-      "===========================================================",
-      "🛰️ [FASE 1] Iniciando Nmap Traceroute hacia 8.8.8.8...",
-      "🚀 Comando: nmap --traceroute -sn -T2 8.8.8.8",
-      "   -> Enviando sondas de red de baja velocidad (T2)...",
-      "   -> [HOP PRIVADO] Gateway local detectado en 192.168.18.1 (04:33:89:20:85:F3)",
-      "   -> [HOP PÚBLICO] ISP frontera detectado en 100.68.0.1",
-      "✅ FASE 1 completada. Columna vertebral mapeada.",
-      "===========================================================",
-      "🔍 [FASE 2] Iniciando Descubrimiento en Cascada...",
-      "⚡ Intento 1: SNMP Nativo sobre Gateway 192.168.18.1...",
-      "   -> Probando comunidad 'public' (timeout: 3.0s)...",
-      "   -> Probando comunidad 'private' (timeout: 3.0s)...",
-      "⚠️ [SNMP] Sin respuesta o puerto 161 bloqueado en el gateway.",
-      "📡 Intento 2: Buscando Servidor DHCP en la subred...",
-      "   -> Comando: nmap -sU -p 67 -T2 192.168.18.0/24 (timeout: 10s)...",
-      "⚠️ [DHCP] Servidor DHCP central inaccesible para SNMP.",
-      "🛠️ Intento 3: Descubrimiento Híbrido TCP/UDP/ICMP...",
-      "   -> Cargando tabla caché ARP de Windows (Instantáneo)...",
-      "   -> Se encontraron dispositivos en memoria caché local.",
-      "   -> Complementando con barrido híbrido de Nmap...",
-      "   -> Comando: nmap -sn -PE -PS21,22,23,80,139,443,445 -PA21,22,23,80,139,443,445 -PU53,137,161 -T3 192.168.18.0/24",
-      "✅ FASE 2 completada. Dispositivos activos descubiertos.",
-      "===========================================================",
-      "🛡️ [FASE 3] Iniciando Escaneo Profundo y Detección de Vulnerabilidades...",
-      "🚀 Inicializando ThreadPoolExecutor con 4 hilos concurrentes...",
-      "   [Hilo-1] Analizando IP: 192.168.18.1 (top-ports 100, max-retries 1)...",
-      "   [Hilo-2] Analizando IP: 192.168.18.171 (top-ports 100, max-retries 1)...",
-      "   [Hilo-3] Analizando IP: 192.168.18.212 (top-ports 100, max-retries 1)...",
-      "   [Hilo-4] Analizando IP: 192.168.18.33 (top-ports 100, max-retries 1)...",
-      "🔍 [DNS] Resolviendo Hostname para dispositivos...",
-      "🔥 [NVD-API] Consultando Base de Datos CVE de la NVD para servicios expuestos...",
-      "💾 [Firebase] Guardando mapa de topología en Firestore...",
-      "🎉 [ÉXITO] Auditoría de Red completada con éxito. Redirigiendo a resultados..."
-    ];
-
-    const passiveLogsSim = [
-      "🤫 SecScan Daemon v1.2.0 - Iniciando en MODO AUDITORÍA PASIVA (100% Silencioso)...",
-      "🔒 JWT de usuario validado con éxito. Modo seguro activo.",
-      "===========================================================",
-      "🛡️ [PASIVO] Generando topología pasiva sin inyectar paquetes a la red...",
-      "   -> Leyendo configuración de interfaz de Windows local...",
-      "   -> Gateway local detectado en 192.168.18.1 (04:33:89:20:85:F3)",
-      "✅ Estructura base mapeada a partir del sistema operativo local.",
-      "===========================================================",
-      "⚡ [PASIVO] Leyendo memoria caché ARP de la máquina local...",
-      "🚀 Comando local: arp -a (Instantáneo)",
-      "   -> Extrayendo búfer de la interfaz de red activa...",
-      "   -> Mapeando dispositivos a partir del búfer de la interfaz de red...",
-      "✅ Memoria ARP mapeada con éxito.",
-      "===========================================================",
-      "🔍 [PASIVO] Ejecutando DNS Inverso local...",
-      "   -> Traduciendo nombres de red para dispositivos encontrados...",
-      "💾 [Firebase] Guardando dispositivos pasivos descubiertos en Firestore...",
-      "🎉 [ÉXITO] Auditoría Pasiva completada exitosamente en 1.5 segundos."
-    ];
-
-    const chosenLogs = passiveScan ? passiveLogsSim : activeLogsSim;
-    const logInterval = animateLogs(chosenLogs);
+    // Iniciar consola vacía
+    setConsoleLogs(["🚀 SecScan Daemon - Conectando con el motor backend..."]);
 
     try {
       const token = await getToken();
       const scanId = crypto.randomUUID();
 
       // Disparamos el escaneo pasando el parámetro passive correspondientemente
+      // El backend ahora responderá de inmediato e iniciará en 2do plano
       const scanResult = await triggerN8nScan("auto", token, scanId, passiveScan);
       
       if (passiveScan) {
-        setScanMsg("🤫 Modo Pasivo (ARP Caché) — Leyendo memoria local de forma indetectable...");
+        setScanMsg("🤫 Modo Pasivo (ARP Caché) — Leyendo memoria local...");
       } else if (scanResult.modo === "n8n") {
         setScanMsg("⚡ Modo Turbo (n8n) — Escaneando tu red en paralelo...");
       } else {
         setScanMsg("Escaneando tu red. Esperando resultados...");
       }
 
-      // Polling de resultados
+      // Función para auto-scroll de la terminal
+      const scrollToBottom = () => {
+        setTimeout(() => {
+          const el = document.getElementById("console-logs-container");
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 50);
+      };
+
+      // Polling de resultados (ahora empieza más rápido para captar los primeros logs)
       setTimeout(async () => {
-        const maxPolls = 100;
+        const maxPolls = 150;
         let polls = 0;
         const checkResults = setInterval(async () => {
           polls++;
@@ -309,26 +257,33 @@ function Home() {
             const token = await getToken();
             const res = await getScanDetails(scanId, token);
             if (res.status === "ok" && res.details) {
-              const { devices_found = 0, total_targets = 1 } = res.details;
+              const { devices_found = 0, total_targets = 1, status, logs = [] } = res.details;
+              
+              // Actualizar logs reales en vivo!
+              if (logs.length > 0) {
+                setConsoleLogs(logs);
+                scrollToBottom();
+              }
+              
               setDevicesFound(devices_found);
               
-              if (!passiveScan) {
-                setScanMsg(`Auditando puertos... (${devices_found} / ${total_targets}) dispositivos listos`);
+              if (!passiveScan && status !== "completed") {
+                setScanMsg(`Auditando puertos... (${devices_found} / ${total_targets || '?'}) dispositivos listos`);
               }
 
-              // Condición de éxito
-              if (devices_found >= total_targets && polls >= 2) {
+              // Condición de éxito: el backend marca status como 'completed'
+              if (status === "completed" || (devices_found >= total_targets && total_targets > 0 && polls >= 3)) {
                 clearInterval(checkResults);
-                clearInterval(logInterval);
                 setScanning(false);
                 setBgTaskActive(false);
-                navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
+                setTimeout(() => {
+                  navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
+                }, 1000); // Pequeño delay para ver el último log de éxito
               }
             }
 
             if (polls >= maxPolls) {
               clearInterval(checkResults);
-              clearInterval(logInterval);
               setScanning(false);
               setBgTaskActive(false);
               navigate(`/history/${scanId}`, { state: { defaultView: "arbol" } });
@@ -336,13 +291,12 @@ function Home() {
           } catch (e) {
              console.error("Error polling", e);
           }
-        }, 2500);
-      }, 4000);
+        }, 1500); // Polling más rápido (1.5s) para sensación de tiempo real
+      }, 1000);
     } catch (err) {
-      clearInterval(logInterval);
       setScanning(false);
       setBgTaskActive(false);
-      alert("Error de conexión. ¿El backend y n8n están encendidos?");
+      alert("Error de conexión. ¿El backend está encendido?");
     }
   };
 

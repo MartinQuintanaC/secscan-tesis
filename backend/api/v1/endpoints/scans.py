@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
 from schemas.scan import ScanRequest, CVELookupRequest
 from services.scan_service import ScanService
 from services.db_service import DatabaseService
@@ -24,7 +24,7 @@ def verify_internal_key(x_internal_key: str = Header(None)):
 @router.post("/discover")
 def discover_network(request: ScanRequest, user: dict = Depends(get_current_user)):
     user_id = user.get("uid", "")
-    result = scan_service.discover(request.target_ip)
+    result = scan_service.discover(request.target_ip, passive=request.passive)
     if result.get("error") == "NMAP_MISSING":
         return {"status": "error", "code": "NMAP_MISSING", "dispositivos": []}
     
@@ -34,6 +34,7 @@ def discover_network(request: ScanRequest, user: dict = Depends(get_current_user
         "dispositivos": result["dispositivos"],
         "user_id": user_id
     }
+
 
 
 @router.post("/deep-scan/{ip}")
@@ -53,42 +54,121 @@ def deep_scan_device(ip: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _run_scan_bg(user_id: str, scan_id: str, target_ip: str, passive: bool):
+    import concurrent.futures
+    import datetime
+    
+    print(f"[BFF-BG] Modo directo para usuario: {user_id} (Pasivo: {passive})")
+    db_service.append_scan_log(user_id, scan_id, f"Iniciando auditoría de red (Pasivo: {passive}) en {target_ip}...")
+    
+    result = scan_service.discover(target_ip, passive=passive)
+    
+    if result.get("error") == "NMAP_MISSING":
+        db_service.append_scan_log(user_id, scan_id, "Error crítico: Nmap no está instalado en el sistema.")
+        db_service.update_scan_metadata(user_id, scan_id, {"status": "error", "error": "NMAP_MISSING"})
+        return
+        
+    dispositivos = result.get("dispositivos", [])
+    print(f"[BFF-BG] Dispositivos encontrados: {len(dispositivos)}")
+    db_service.append_scan_log(user_id, scan_id, f"Fase de descubrimiento completada. {len(dispositivos)} dispositivos detectados en la red.")
+    
+    # Actualizar total de targets
+    db_service.update_scan_metadata(user_id, scan_id, {"total_targets": len(dispositivos)})
+    
+    escaneados = 0
+    total_vulnerabilidades = 0
+    
+    def scan_single_device(dispositivo):
+        ip = dispositivo.get("ip", "")
+        if not ip:
+            return None
+        try:
+            db_service.mark_scan_processed(user_id, scan_id, ip)
+            
+            db_service.append_scan_log(user_id, scan_id, f"Analizando host {ip} ({dispositivo.get('fabricante', 'Desconocido')})...")
+            
+            if passive:
+                detalle = {
+                    "ip": ip,
+                    "mac": dispositivo.get("mac", "Desconocida"),
+                    "hostname": dispositivo.get("hostname", ""),
+                    "fabricante": dispositivo.get("fabricante", "Desconocido") or "Desconocido",
+                    "puertos_abiertos": [],
+                    "total_vulnerabilidades": 0,
+                    "max_score": 0.0,
+                    "fecha_auditoria": datetime.datetime.utcnow().isoformat(),
+                    "estado": "Completado (Pasivo)",
+                    "es_nuevo": False,
+                    "primera_conexion": datetime.datetime.utcnow().isoformat(),
+                    "scan_id": scan_id
+                }
+                db_service.save_device(ip, detalle, user_id)
+                db_service.save_scan_device(user_id, scan_id, ip, detalle)
+            else:
+                detalle = scan_service.deep_scan(ip, user_id, scan_id)
+                # Incrementar conteos parciales
+                if detalle:
+                    vulns = detalle.get("total_vulnerabilidades", 0)
+                    if vulns > 0:
+                        db_service.increment_vulnerabilities(user_id, scan_id, vulns)
+                
+            print(f"[BFF-BG] GUARDADO: {ip} para user: {user_id} (Pasivo: {passive})")
+            db_service.increment_devices(user_id, scan_id, 1)
+            return detalle
+        except Exception as e:
+            print(f"[BFF-BG] Error escaneando {ip}: {e}")
+            db_service.append_scan_log(user_id, scan_id, f"Error escaneando {ip}: {str(e)}")
+            return None
+
+    dispositivos_validos = [d for d in dispositivos if d.get("ip")]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        resultados = list(executor.map(scan_single_device, dispositivos_validos))
+
+    for r in resultados:
+        if r is not None:
+            escaneados += 1
+            total_vulnerabilidades += r.get("total_vulnerabilidades", 0)
+    
+    db_service.update_scan_metadata(user_id, scan_id, {
+        "end_time": datetime.datetime.utcnow().isoformat(),
+        "status": "completed"
+    })
+    
+    db_service.append_scan_log(user_id, scan_id, f"✅ Auditoría finalizada con éxito. {escaneados} equipos procesados.")
+    print(f"[BFF-BG] Escaneo COMPLETADO. Total: {escaneados}")
+
+
 @router.post("/trigger-scan")
-def trigger_scan(request: ScanRequest, authorization: str = Header(None), user: dict = Depends(get_current_user)):
+def trigger_scan(request: ScanRequest, background_tasks: BackgroundTasks, authorization: str = Header(None), user: dict = Depends(get_current_user)):
     """
-    Endpoint BFF (Backend-for-Frontend) - Versión Segura.
+    Endpoint BFF (Backend-for-Frontend) - Versión Segura y Asíncrona.
     - Valida JWT
     - Genera scanId único (idempotencia)
-    - Pasa token REAL a n8n para validación interna
+    - Delega tarea a BackgroundTasks para emitir logs en vivo
     """
-    # 1. Extraer uid del token JWT (FUENTE DE VERDAD)
     user_id = user.get("uid", "")
     target_ip = request.target_ip if request.target_ip else "auto"
-    
-    # 2. Usar scanId del frontend o generar uno nuevo (Idempotencia)
     scan_id = request.scan_id if request.scan_id else str(uuid.uuid4())
-    
-    # 3. Extraer el token puro (sin 'Bearer ')
     raw_token = authorization.split(" ")[1] if authorization and "Bearer" in authorization else ""
 
-    print(f"🚀 [BFF] Iniciando Escaneo Global")
+    print(f"🚀 [BFF] Iniciando Escaneo Global Asíncrono")
     print(f"👤 Usuario: {user_id}")
     print(f"🆔 ScanId: {scan_id}")
     
-    # 4. Limpiar datos anteriores del usuario (opcional si usas subcolecciones por scan)
     db_service.clear_devices(user_id)
     db_service.clear_vulnerabilities(user_id)
     
-    # 5. Preparar payload para n8n (CON TOKEN REAL)
+    if db_service.scan_exists(user_id, scan_id):
+        return {"status": "already_processed", "scan_id": scan_id}
+        
     payload = {
         "target_ip": target_ip,
         "token": raw_token,
         "scan_id": scan_id,
         "user_id": user_id 
     }
-
     
-    # 5. Llamar a n8n
     n8n_disponible = False
     url_prod = "http://localhost:5678/webhook/secscan"
     url_test = "http://localhost:5678/webhook-test/secscan"
@@ -115,71 +195,23 @@ def trigger_scan(request: ScanRequest, authorization: str = Header(None), user: 
             "mensaje": "Workflow n8n iniciado"
         }
     
-    # Fallback: modo directo (sin n8n) - mismo flujo pero directo
-    print(f"[BFF] Modo directo para usuario: {user_id}")
-    
-    # Verificar si este scanId ya fue procesado (idempotencia)
-    if db_service.scan_exists(user_id, scan_id):
-        return {"status": "already_processed", "scan_id": scan_id}
-    
-    result = scan_service.discover(target_ip)
-    
-    if result.get("error") == "NMAP_MISSING":
-        return {"status": "error", "code": "NMAP_MISSING"}
-    
-    dispositivos = result.get("dispositivos", [])
-    print(f"[BFF] Dispositivos encontrados: {len(dispositivos)}")
-    
-    import concurrent.futures
-
-    escaneados = 0
-    total_vulnerabilidades = 0
-    
-    def scan_single_device(dispositivo):
-        ip = dispositivo.get("ip", "")
-        if not ip:
-            return None
-        try:
-            # Marcar scan como procesado antes de guardar
-            db_service.mark_scan_processed(user_id, scan_id, ip)
-            detalle = scan_service.deep_scan(ip, user_id, scan_id)
-            print(f"[BFF] GUARDADO: {ip} para user: {user_id}")
-            return detalle
-        except Exception as e:
-            print(f"[BFF] Error escaneando {ip}: {e}")
-            return None
-
-    # Filtrar dispositivos con IP válida
-    dispositivos_validos = [d for d in dispositivos if d.get("ip")]
-
-    # Paralelizar en lotes controlados de 4 workers para evitar saturar Nmap en Windows
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        resultados = list(executor.map(scan_single_device, dispositivos_validos))
-
-    # Computar acumulados de escaneos exitosos
-    for r in resultados:
-        if r is not None:
-            escaneados += 1
-            total_vulnerabilidades += r.get("total_vulnerabilidades", 0)
-    
-    # Finalizar el escaneo actualizando sus metadatos globales
-    import datetime
+    # FALLBACK DIRECTO: Tarea asíncrona
     db_service.update_scan_metadata(user_id, scan_id, {
-        "devices_found": escaneados,
-        "vulnerabilidades_found": total_vulnerabilidades,
-        "end_time": datetime.datetime.utcnow().isoformat(),
-        "status": "completed"
+        "devices_found": 0,
+        "vulnerabilidades_found": 0,
+        "total_targets": 0,
+        "status": "processing",
+        "logs": []
     })
     
-    print(f"[BFF] Escaneo COMPLETADO. Total: {escaneados}")
+    background_tasks.add_task(_run_scan_bg, user_id, scan_id, target_ip, request.passive)
     
     return {
         "status": "ok", 
         "modo": "directo",
         "scan_id": scan_id,
         "user_id": user_id,
-        "dispositivos_escaneados": escaneados,
-        "mensaje": f"Escaneo completado: {escaneados} dispositivos"
+        "mensaje": "Escaneo en segundo plano iniciado"
     }
 
 
