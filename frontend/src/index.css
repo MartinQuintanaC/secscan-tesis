@@ -1779,7 +1779,10 @@ ul { list-style: none; padding: 0; margin: 0; }
   align-items: center;
   position: relative;
   list-style: none;
-  padding: 0 12px;
+  padding: 28px 12px 0;
+}
+.nt-children--root > .nt-branch {
+  padding-top: 0;
 }
 
 /* ── CONNECTOR LINES ─────────────────────────────────────── */
@@ -1787,7 +1790,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* Vertical line FROM parent card DOWN (rendered above nt-children) */
 .nt-children:not(.nt-children--root) {
   margin-top: 0;
-  padding-top: 20px; /* space for connector */
+  padding-top: 24px; /* space for connector */
 }
 
 /* Vertical drop from card to the horizontal bar */
@@ -1798,8 +1801,8 @@ ul { list-style: none; padding: 0; margin: 0; }
   left: 50%;
   transform: translateX(-50%);
   width: 2px;
-  height: 20px;
-  background: rgba(168, 85, 247, 0.5);
+  height: 24px;
+  background: var(--purple-border);
   z-index: 1;
 }
 
@@ -1811,7 +1814,7 @@ ul { list-style: none; padding: 0; margin: 0; }
   left: 0;
   right: 0;
   height: 2px;
-  background: rgba(168, 85, 247, 0.3);
+  background: var(--purple-border);
 }
 /* First child: bar only on right half */
 .nt-children:not(.nt-children--root) > .nt-branch:first-child::before {
@@ -1834,8 +1837,8 @@ ul { list-style: none; padding: 0; margin: 0; }
   left: 50%;
   transform: translateX(-50%);
   width: 2px;
-  height: 20px;
-  background: rgba(168, 85, 247, 0.4);
+  height: 28px;
+  background: var(--purple-border);
   z-index: 1;
 }
 
@@ -1847,17 +1850,17 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* Connector between root cards (Internet→Gateway) */
 .nt-children--root > .nt-branch + .nt-branch {
-  margin-top: 0;
+  margin-top: 32px;
 }
-.nt-children--root > .nt-branch + .nt-branch > .nt-card::before {
+.nt-children--root > .nt-branch + .nt-branch::after {
   content: '';
   position: absolute;
-  top: -24px;
+  top: -32px;
   left: 50%;
   transform: translateX(-50%);
   width: 2px;
-  height: 24px;
-  background: rgba(168, 85, 247, 0.5);
+  height: 32px;
+  background: var(--purple-border);
 }
 
 /* ── CARDS ──────────────────────────────────────────────── */
