@@ -465,17 +465,14 @@ class ScannerEngine:
 
         self._log(f"  [ARP] Dispositivos encontrados en caché ARP: {len(discovered)}")
 
-        # ── Fuente 2: Nmap sin raw sockets (descubrimiento híbrido TCP/UDP/ICMP) ──
-        # -sn -PE: usa ICMP echo.
-        # -PS21,22,23,80,139,443,445,9100,8080: TCP SYN ping (cobertura IT e IoT).
-        # -PA21,22,23,80,139,443,445,9100,8080: TCP ACK ping (evade firewalls stateful).
-        # -PU53,137,161: UDP ping (bypasses UDP-only blocks / targets NetBIOS, DNS, SNMP).
-        # -T3: Velocidad normal y robusta.
+        # ── Fuente 2: Nmap sin raw sockets (descubrimiento clásico ICMP ping sweep) ──
+        # -sn -PE: usa ICMP echo. Funciona de manera limpia, rápida y no intrusiva sin saturar la red institucional.
+        # -T3: Velocidad normal estandarizada.
         try:
-            self._log(f"  [Nmap] Complementando con descubrimiento híbrido TCP/UDP/ICMP...")
+            self._log(f"  [Nmap] Complementando con ping sweep clásico ICMP (-sn -PE -T3)...")
             self.nm.scan(
                 hosts=network_range, 
-                arguments='-sn -PE -PS21,22,23,80,139,443,445,9100,8080 -PA21,22,23,80,139,443,445,9100,8080 -PU53,137,161 -T3'
+                arguments='-sn -PE -T3'
             )
 
             for host in self.nm.all_hosts():
@@ -549,13 +546,11 @@ class ScannerEngine:
         except Exception:
             pass
 
-        # Si es una subred externa y el SNMP falló, estamos ante una Frontera Opaca (NAT / Firewall total)
-        # Abortamos de inmediato para evitar colgar el escáner con pings que el NAT descartará
+        # Si es una subred externa y el SNMP falló, advertimos pero NO abortamos para permitir fallback de Nmap.
         if es_subred_externa and not snmp_exitosa:
-            msg = f"Frontera Opaca Detectada en {parent_ip}: La subred externa {network_range} está aislada por NAT/Firewall y SNMP está inactivo. Abortando escaneo en esta rama para evitar demoras y falsos negativos."
+            msg = f"Aviso de Red en {parent_ip}: La subred externa {network_range} no responde a SNMP. Continuando con escaneo de descubrimiento Nmap fallback."
             advertencias.append(msg)
-            self._log(f"  [ALERTA] {msg}")
-            return []
+            self._log(f"  [AVISO] {msg}")
 
         # ── Intento 2: Buscar servidor DHCP y consultar SNMP sobre él ─────────
         devices = self._intento_dhcp_server(network_range, advertencias)
