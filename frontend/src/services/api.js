@@ -75,3 +75,19 @@ export async function getScanDevices(scanId, token) {
   });
   return res.json();
 }
+
+export async function getWifiNetworks(token) {
+  const res = await fetch(`${API_BASE}/api/wifi/scan`, {
+    headers: getHeaders(token),
+  });
+  return res.json();
+}
+
+export async function connectWifi(ssid, password, token) {
+  const res = await fetch(`${API_BASE}/api/wifi/connect`, {
+    method: "POST",
+    headers: getHeaders(token),
+    body: JSON.stringify({ ssid, password }),
+  });
+  return res.json();
+}

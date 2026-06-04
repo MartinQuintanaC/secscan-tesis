@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header
 from firebase_admin import auth
-from api.v1.endpoints import scans, devices, system
+from api.v1.endpoints import scans, devices, system, wifi
 import os
 import uuid
 
@@ -10,6 +10,7 @@ api_router = APIRouter()
 api_router.include_router(scans.router, tags=["scans"])
 api_router.include_router(devices.router, tags=["devices"])
 api_router.include_router(system.router, tags=["system"])
+api_router.include_router(wifi.router, tags=["wifi"])
 
 # ========== RUTAS INTERNAS PARA N8N (Versión Segura) ==========
 from services.scan_service import ScanService

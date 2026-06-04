@@ -7,7 +7,7 @@ import {
   useParams,
   useLocation
 } from "react-router-dom";
-import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails, getScanHistory } from "./services/api";
+import { triggerN8nScan, deepScan, getDevices, getVulnerabilities, checkHealth, installNmap, getScanDevices, getScanDetails, getScanHistory, getWifiNetworks, connectWifi } from "./services/api";
 import "./index.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -156,6 +156,55 @@ function Home() {
   // Estados para selección de red objetivo
   const [targetType, setTargetType] = useState("auto"); // "auto" | "custom"
   const [customTarget, setCustomTarget] = useState("");
+
+  // Estados para WiFi Switcher
+  const [switcherTab, setSwitcherTab] = useState("history"); // "history" | "wifi"
+  const [wifiNetworks, setWifiNetworks] = useState([]);
+  const [scanningWifi, setScanningWifi] = useState(false);
+  const [selectedWifi, setSelectedWifi] = useState(null);
+  const [wifiPassword, setWifiPassword] = useState("");
+  const [connectingWifi, setConnectingWifi] = useState(false);
+
+  const handleScanWifi = async () => {
+    setScanningWifi(true);
+    try {
+      const token = await getToken();
+      const res = await getWifiNetworks(token);
+      if (res.status === "ok") {
+        setWifiNetworks(res.networks);
+      } else {
+        console.error("Error al escanear WiFi:", res.detail);
+      }
+    } catch (e) {
+      console.error("Error cargando WiFi", e);
+    }
+    setScanningWifi(false);
+  };
+
+  const handleConnectWifi = async () => {
+    if (!selectedWifi) return;
+    setConnectingWifi(true);
+    try {
+      const token = await getToken();
+      const res = await connectWifi(selectedWifi.ssid, wifiPassword, token);
+      if (res.status === "ok") {
+        alert(`Iniciando conexión a '${selectedWifi.ssid}'. La red cambiará en unos segundos.`);
+        setSelectedWifi(null);
+        setWifiPassword("");
+      } else {
+        alert(`Error al conectar: ${res.detail}`);
+      }
+    } catch (e) {
+      alert("Error crítico conectando a la red WiFi.");
+    }
+    setConnectingWifi(false);
+  };
+
+  useEffect(() => {
+    if (switcherTab === "wifi") {
+      handleScanWifi();
+    }
+  }, [switcherTab]);
 
   // Estados nuevos para Bento Grid
   const [historyList, setHistoryList] = useState([]);
@@ -531,42 +580,133 @@ function Home() {
         {/* PANEL 3: NETWORK SWITCHER / SELECTOR DE REDES (MEDIUM CARD) */}
         <div className="bento-card bento-switcher slide-up" style={{ animationDelay: "0.1s" }}>
           <div className="bento-badge switcher-badge">🔄 INTERCAMBIADOR DE RED</div>
-          <h3 className="bento-card-title-sm">Redes y Escaneos Históricos</h3>
+          <h3 className="bento-card-title-sm">Redes y Escaneos</h3>
           <p className="bento-card-desc-sm">
-            Alterna entre las redes escaneadas en tu historial para examinar topologías de extensores y equipos.
+            Alterna entre las redes escaneadas en tu historial o cambia la conexión Wi-Fi física de esta máquina auditora.
           </p>
 
-          <div className="network-switcher-list">
-            {historyList.length > 0 ? (
-              historyList.map((scan, i) => (
-                <div 
-                  key={i} 
-                  className="network-switcher-item"
-                  onClick={() => navigate(`/history/${scan.scan_id}`, { state: { defaultView: "arbol" } })}
-                >
-                  <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span className="network-network-icon" style={{ fontSize: '20px' }}>🌐</span>
-                    <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span className="network-item-name">Red {scan.target_ip || "Auto"}</span>
-                      <span className="network-item-meta">{scan.created_at?.split("T")[0] || "Fecha N/A"}</span>
+          {/* Selector de Pestañas */}
+          <div className="switcher-tabs" style={{ display: "flex", gap: "8px", margin: "12px 0" }}>
+            <button
+              type="button"
+              className={`switcher-tab-btn ${switcherTab === "history" ? "active" : ""}`}
+              style={{
+                flex: 1,
+                padding: "8px 10px",
+                borderRadius: "8px",
+                fontSize: "11px",
+                fontWeight: "600",
+                cursor: "pointer",
+                border: "1px solid var(--border-subtle)",
+                background: switcherTab === "history" ? "var(--purple-dim)" : "var(--bg-surface)",
+                color: switcherTab === "history" ? "var(--purple-400)" : "var(--text-secondary)",
+                borderColor: switcherTab === "history" ? "var(--purple-border)" : "var(--border-subtle)",
+                transition: "all 0.2s ease"
+              }}
+              onClick={() => setSwitcherTab("history")}
+            >
+              📊 Historial
+            </button>
+            <button
+              type="button"
+              className={`switcher-tab-btn ${switcherTab === "wifi" ? "active" : ""}`}
+              style={{
+                flex: 1,
+                padding: "8px 10px",
+                borderRadius: "8px",
+                fontSize: "11px",
+                fontWeight: "600",
+                cursor: "pointer",
+                border: "1px solid var(--border-subtle)",
+                background: switcherTab === "wifi" ? "var(--cyan-dim)" : "var(--bg-surface)",
+                color: switcherTab === "wifi" ? "var(--cyan-400)" : "var(--text-secondary)",
+                borderColor: switcherTab === "wifi" ? "var(--cyan-border)" : "var(--border-subtle)",
+                transition: "all 0.2s ease"
+              }}
+              onClick={() => setSwitcherTab("wifi")}
+            >
+              📶 Redes Wi-Fi
+            </button>
+          </div>
+
+          {switcherTab === "history" ? (
+            <div className="network-switcher-list" style={{ maxHeight: "280px", overflowY: "auto" }}>
+              {historyList.length > 0 ? (
+                historyList.map((scan, i) => (
+                  <div 
+                    key={i} 
+                    className="network-switcher-item"
+                    onClick={() => navigate(`/history/${scan.scan_id}`, { state: { defaultView: "arbol" } })}
+                  >
+                    <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span className="network-network-icon" style={{ fontSize: '20px' }}>🌐</span>
+                      <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span className="network-item-name">Red {scan.target_ip || "Auto"}</span>
+                        <span className="network-item-meta">{scan.created_at?.split("T")[0] || "Fecha N/A"}</span>
+                      </div>
+                    </div>
+                    <div className="network-badges" style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
+                      <span className="network-badge-devices" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                        👥 {scan.devices_found || 0}
+                      </span>
+                      <span className="network-badge-cves" style={{ background: 'rgba(255,51,102,0.1)', color: 'var(--accent-red)', padding: '2px 6px', borderRadius: '4px' }}>
+                        🛡️ {scan.vulnerabilidades_found || 0}
+                      </span>
                     </div>
                   </div>
-                  <div className="network-badges" style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                    <span className="network-badge-devices" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                      👥 {scan.devices_found || 0}
-                    </span>
-                    <span className="network-badge-cves" style={{ background: 'rgba(255,51,102,0.1)', color: 'var(--accent-red)', padding: '2px 6px', borderRadius: '4px' }}>
-                      🛡️ {scan.vulnerabilidades_found || 0}
-                    </span>
-                  </div>
+                ))
+              ) : (
+                <div className="network-switcher-placeholder">
+                  No hay escaneos anteriores en la base de datos.
                 </div>
-              ))
-            ) : (
-              <div className="network-switcher-placeholder">
-                No hay escaneos anteriores en la base de datos.
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="network-switcher-list" style={{ maxHeight: "280px", overflowY: "auto" }}>
+              {scanningWifi ? (
+                <div style={{ padding: "30px 10px", textAlign: "center" }}>
+                  <div className="bento-spinner-sm" style={{ margin: "0 auto 12px" }} />
+                  <p style={{ color: "var(--cyan-400)", fontSize: "12px" }}>Buscando redes inalámbricas...</p>
+                </div>
+              ) : (
+                <>
+                  {wifiNetworks.map((net, i) => (
+                    <div 
+                      key={i} 
+                      className="network-switcher-item"
+                      onClick={() => setSelectedWifi(net)}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                    >
+                      <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span className="network-network-icon" style={{ fontSize: '20px' }}>📶</span>
+                        <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span className="network-item-name">{net.ssid}</span>
+                          <span className="network-item-meta" style={{ fontSize: "10px" }}>{net.auth}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "600", color: net.signal >= 75 ? "var(--green-400)" : net.signal >= 50 ? "var(--yellow-400)" : "var(--red-400)" }}>
+                          {net.signal}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {wifiNetworks.length === 0 && (
+                    <div className="network-switcher-placeholder">
+                      No se encontraron redes Wi-Fi visibles.
+                    </div>
+                  )}
+                  <button 
+                    className="bento-btn bento-btn-secondary" 
+                    style={{ padding: "8px", fontSize: "12px", marginTop: "12px" }}
+                    onClick={handleScanWifi}
+                  >
+                    🔄 Escanear Redes de Nuevo
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* PANEL 4: ESCANEO PASIVO EXPLICATIVO (MEDIUM CARD) */}
@@ -662,6 +802,69 @@ function Home() {
                 <button className="btn btn-ghost" onClick={() => setNmapMissing(false)}>Cancelar</button>
                 <button className="btn btn-primary" onClick={handleInstallNmap}>
                   📥 Instalar Motor Automáticamente
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA CONEXIÓN A RED WIFI */}
+      {selectedWifi && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: "400px" }}>
+            <div style={{ fontSize: "36px", marginBottom: "12px", textAlign: "center" }}>📶</div>
+            <h3 style={{ color: "var(--cyan-400)", marginBottom: "10px", textAlign: "center" }}>
+              Conectar a {selectedWifi.ssid}
+            </h3>
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px", textAlign: "center" }}>
+              Seguridad: <strong>{selectedWifi.auth}</strong> | Señal: <strong>{selectedWifi.signal}%</strong>
+            </p>
+            
+            {selectedWifi.auth.toLowerCase().includes("open") || selectedWifi.auth.toLowerCase().includes("abierta") || selectedWifi.auth.toLowerCase().includes("none") ? (
+              <p style={{ fontSize: "13px", color: "var(--green-400)", marginBottom: "20px", textAlign: "center" }}>
+                Esta es una red abierta. No se requiere contraseña para conectarse.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
+                <label style={{ fontSize: "12px", color: "var(--text-secondary)", fontWeight: "600" }}>
+                  Contraseña de Red
+                </label>
+                <input
+                  type="password"
+                  placeholder="Ingresa la contraseña de la red..."
+                  className="quick-input"
+                  value={wifiPassword}
+                  onChange={(e) => setWifiPassword(e.target.value)}
+                  style={{
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-base)",
+                    borderRadius: "8px",
+                    padding: "10px 12px",
+                    color: "var(--text-primary)",
+                    outline: "none"
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && !connectingWifi && handleConnectWifi()}
+                />
+              </div>
+            )}
+            
+            {connectingWifi ? (
+              <div style={{ padding: "10px", textAlign: "center" }}>
+                <div className="bento-spinner-sm" style={{ margin: "0 auto 10px" }} />
+                <p style={{ color: "var(--cyan-400)", fontSize: "12px" }}>Enviando credenciales y conectando...</p>
+              </div>
+            ) : (
+              <div className="modal-buttons" style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button className="btn btn-ghost" onClick={() => { setSelectedWifi(null); setWifiPassword(""); }}>
+                  Cancelar
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleConnectWifi}
+                  disabled={!(selectedWifi.auth.toLowerCase().includes("open") || selectedWifi.auth.toLowerCase().includes("abierta") || selectedWifi.auth.toLowerCase().includes("none")) && !wifiPassword.trim()}
+                >
+                  ⚡ Conectar
                 </button>
               </div>
             )}
