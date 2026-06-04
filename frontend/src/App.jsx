@@ -153,6 +153,10 @@ function Home() {
   const [installingNmap, setInstallingNmap] = useState(false);
   const [isPassive, setIsPassive] = useState(false);
 
+  // Estados para selección de red objetivo
+  const [targetType, setTargetType] = useState("auto"); // "auto" | "custom"
+  const [customTarget, setCustomTarget] = useState("");
+
   // Estados nuevos para Bento Grid
   const [historyList, setHistoryList] = useState([]);
   const [consoleLogs, setConsoleLogs] = useState([
@@ -206,6 +210,12 @@ function Home() {
       return;
     }
 
+    const target = targetType === "auto" ? "auto" : customTarget.trim();
+    if (targetType === "custom" && !target) {
+      alert("Por favor, ingresa un rango de red o dirección IP válida.");
+      return;
+    }
+
     try {
       const token = await getToken();
       const health = await checkHealth(token);
@@ -218,10 +228,10 @@ function Home() {
     setScanning(true);
     setBgTaskActive(true);
     setDevicesFound(0);
-    setScanMsg(passiveScan ? "Inicializando escaneo pasivo indetectable..." : "Conectando con el motor de escaneo activo...");
+    setScanMsg(passiveScan ? "Inicializando escaneo pasivo indetectable..." : `Conectando con el motor de escaneo activo en ${target}...`);
 
     // Iniciar consola vacía
-    setConsoleLogs(["🚀 SecScan Daemon - Conectando con el motor backend..."]);
+    setConsoleLogs([`🚀 SecScan Daemon - Conectando con el motor backend para auditar ${target}...`]);
 
     try {
       const token = await getToken();
@@ -229,7 +239,7 @@ function Home() {
 
       // Disparamos el escaneo pasando el parámetro passive correspondientemente
       // El backend ahora responderá de inmediato e iniciará en 2do plano
-      const scanResult = await triggerN8nScan("auto", token, scanId, passiveScan);
+      const scanResult = await triggerN8nScan(target, token, scanId, passiveScan);
       
       if (passiveScan) {
         setScanMsg("🤫 Modo Pasivo (ARP Caché) — Leyendo memoria local...");
@@ -387,6 +397,79 @@ function Home() {
           <p className="bento-card-desc">
             Escanea tu subred local completa, descubre la topología y extensores intermedios en cascada y detecta puertos vulnerables expuestos.
           </p>
+
+          {/* Selector de Red Objetivo */}
+          <div className="target-selector-container" style={{ margin: "16px 0", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <label style={{ fontSize: "12px", color: "var(--text-secondary)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Rango de Red Objetivo
+            </label>
+            <div className="selector-pills" style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className={`selector-pill ${targetType === "auto" ? "active" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "1px solid var(--border-subtle)",
+                  background: targetType === "auto" ? "var(--cyan-dim)" : "var(--bg-surface)",
+                  color: targetType === "auto" ? "var(--cyan-400)" : "var(--text-secondary)",
+                  borderColor: targetType === "auto" ? "var(--cyan-border)" : "var(--border-subtle)",
+                  transition: "all 0.2s ease"
+                }}
+                onClick={() => setTargetType("auto")}
+                disabled={bgTaskActive}
+              >
+                🌐 Auto-detectar Red
+              </button>
+              <button
+                type="button"
+                className={`selector-pill ${targetType === "custom" ? "active" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "1px solid var(--border-subtle)",
+                  background: targetType === "custom" ? "var(--purple-dim)" : "var(--bg-surface)",
+                  color: targetType === "custom" ? "var(--purple-400)" : "var(--text-secondary)",
+                  borderColor: targetType === "custom" ? "var(--purple-border)" : "var(--border-subtle)",
+                  transition: "all 0.2s ease"
+                }}
+                onClick={() => setTargetType("custom")}
+                disabled={bgTaskActive}
+              >
+                ✏️ Rango Manual
+              </button>
+            </div>
+            {targetType === "custom" && (
+              <div className="custom-input-wrapper fade-in" style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                <input
+                  type="text"
+                  placeholder="Ej: 192.168.1.0/24 o 10.0.0.0/24"
+                  className="quick-input"
+                  style={{
+                    flex: 1,
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-base)",
+                    borderRadius: "8px",
+                    padding: "10px 12px",
+                    fontSize: "13px",
+                    color: "var(--text-primary)",
+                    outline: "none"
+                  }}
+                  value={customTarget}
+                  onChange={(e) => setCustomTarget(e.target.value)}
+                  disabled={bgTaskActive}
+                />
+              </div>
+            )}
+          </div>
 
           <div className="scanner-controls-box">
             <button 
