@@ -5,10 +5,23 @@ import re
 import os
 import tempfile
 import uuid
+import time
 
 router = APIRouter()
 
 def scan_wifi_networks():
+    # 1. Intentamos forzar un escaneo físico del hardware usando pywifi para refrescar la caché del SO
+    try:
+        import pywifi
+        wifi = pywifi.PyWiFi()
+        if wifi.interfaces():
+            iface = wifi.interfaces()[0]
+            iface.scan()
+            print("[WIFI] Escaneo físico de hardware disparado mediante pywifi...")
+            time.sleep(2.0)  # Esperamos 2 segundos a que se actualice la caché de redes
+    except Exception as e:
+        print(f"[WIFI WARNING] No se pudo forzar el escaneo de hardware mediante pywifi: {e}")
+
     result = ""
     try:
         # Intentamos obtener la información detallada con Bssid para sacar el porcentaje de señal
