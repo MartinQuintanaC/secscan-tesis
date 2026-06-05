@@ -83,3 +83,19 @@ Para cumplir con los requerimientos de mapeo físico de la red y generar la Vist
 - **Manejo de Redes Aisladas:** En redes institucionales grandes (ej. universidades), los Gateways a menudo están configurados para bloquear consultas de Traceroute (ICMP TTL Expired), resultando en `Hops Invisibles` desde el salto número 1. 
 - **Algoritmo de Inferencia en UI:** Si la Fase 2 (Nmap Ping Sweep) logra identificar dispositivos activos en la subred local (ej. `65.52.99.x`), pero la Fase 1 (Traceroute) no descubrió un Gateway explícito para esa subred (debido al bloqueo del cortafuegos), el algoritmo del frontend genera dinámicamente un **"Gateway Inferido"**. Asigna la teórica `.1` a dicho Gateway y anida a todos los dispositivos descubiertos, reconstruyendo con éxito la topología local pese a las políticas de evasión del hardware corporativo.
 - **Router Principal "Unknown":** Si el último salto privado antes de salir a Internet es bloqueado por políticas del Firewall Perimetral, SecScan lo clasifica como el *Router Principal (C)* con IP "unknown", probando la existencia de múltiples anillos de seguridad (red multi-capa) frente al ISP.
+
+## 6. Sprint de Maquetación y Estabilización Visual (Bento Grid)
+En el último sprint de refinamiento visual, se implementaron técnicas avanzadas de diseño responsivo e interfaces para resolver el problema de la deformación de contenedores en el Bento Grid:
+
+- **Estructuración Simétrica del Grid (Desktop)**: Se ordenó el flujo visual con una arquitectura de rejilla basada en `grid-template-areas`:
+  - **Fila 1**: `Lanzar Auditoría` | `Redes y Escaneos` (Intercambiador) | `Consola de Auditoría` (Terminal).
+  - **Fila 2**: `Escanear Objetivo` (Objetivo Específico) | `Escaneo Pasivo` (¿Cómo funciona?) | `Consola de Auditoría` (Terminal).
+- **Control de Altura Invariante (Pixel Perfect)**: Para evitar desalineaciones por diferencias de contenido, se fijaron alturas en escritorio:
+  - Fila 1 (Tarjetas superiores): **400px** de altura.
+  - Fila 2 (Tarjetas inferiores): **240px** de altura.
+  - Columna 3 (Terminal de consola): **656px** de altura (Fila 1 + Fila 2 + 16px de gap).
+- **Cajas Contenedoras con Scroll Flexbox**:
+  - Se configuraron las listas internas del intercambiador y el panel de logs con `flex: 1` y `overflow-y: auto`. Esto garantiza que, si se listan muchas redes o el terminal acumula logs masivos de escaneo en vivo, el contenido se desplace de forma interna sin estirar las tarjetas del grid ni generar espacios vacíos asimétricos.
+- **Reseteo Responsivo Completo**:
+  - A través de media queries (`@media (max-width: 1250px)`), las alturas fijas del grid se desactivan (`height: auto !important`) para un acoplamiento natural, garantizando que el diseño se mantenga óptimo tanto en tablets como en pantallas móviles pequeñas.
+

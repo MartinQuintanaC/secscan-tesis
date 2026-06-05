@@ -188,14 +188,14 @@ function Home() {
       const token = await getToken();
       const res = await connectWifi(selectedWifi.ssid, wifiPassword, token);
       if (res.status === "ok") {
-        alert(`Iniciando conexión a '${selectedWifi.ssid}'. La red cambiará en unos segundos.`);
+        setConsoleLogs(prev => [...prev, `✅ Conectando a '${selectedWifi.ssid}'... La red cambiará en unos segundos.`]);
         setSelectedWifi(null);
         setWifiPassword("");
       } else {
-        alert(`Error al conectar: ${res.detail}`);
+        setConsoleLogs(prev => [...prev, `❌ Error al conectar: ${res.detail}`]);
       }
     } catch (e) {
-      alert("Error crítico conectando a la red WiFi.");
+      setConsoleLogs(prev => [...prev, "❌ Error crítico conectando a la red WiFi."]);
     }
     setConnectingWifi(false);
   };
@@ -447,78 +447,6 @@ function Home() {
             Escanea tu subred local completa, descubre la topología y extensores intermedios en cascada y detecta puertos vulnerables expuestos.
           </p>
 
-          {/* Selector de Red Objetivo */}
-          <div className="target-selector-container" style={{ margin: "16px 0", display: "flex", flexDirection: "column", gap: "10px" }}>
-            <label style={{ fontSize: "12px", color: "var(--text-secondary)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Rango de Red Objetivo
-            </label>
-            <div className="selector-pills" style={{ display: "flex", gap: "8px" }}>
-              <button
-                type="button"
-                className={`selector-pill ${targetType === "auto" ? "active" : ""}`}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  border: "1px solid var(--border-subtle)",
-                  background: targetType === "auto" ? "var(--cyan-dim)" : "var(--bg-surface)",
-                  color: targetType === "auto" ? "var(--cyan-400)" : "var(--text-secondary)",
-                  borderColor: targetType === "auto" ? "var(--cyan-border)" : "var(--border-subtle)",
-                  transition: "all 0.2s ease"
-                }}
-                onClick={() => setTargetType("auto")}
-                disabled={bgTaskActive}
-              >
-                🌐 Auto-detectar Red
-              </button>
-              <button
-                type="button"
-                className={`selector-pill ${targetType === "custom" ? "active" : ""}`}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  border: "1px solid var(--border-subtle)",
-                  background: targetType === "custom" ? "var(--purple-dim)" : "var(--bg-surface)",
-                  color: targetType === "custom" ? "var(--purple-400)" : "var(--text-secondary)",
-                  borderColor: targetType === "custom" ? "var(--purple-border)" : "var(--border-subtle)",
-                  transition: "all 0.2s ease"
-                }}
-                onClick={() => setTargetType("custom")}
-                disabled={bgTaskActive}
-              >
-                ✏️ Rango Manual
-              </button>
-            </div>
-            {targetType === "custom" && (
-              <div className="custom-input-wrapper fade-in" style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-                <input
-                  type="text"
-                  placeholder="Ej: 192.168.1.0/24 o 10.0.0.0/24"
-                  className="quick-input"
-                  style={{
-                    flex: 1,
-                    background: "var(--bg-surface)",
-                    border: "1px solid var(--border-base)",
-                    borderRadius: "8px",
-                    padding: "10px 12px",
-                    fontSize: "13px",
-                    color: "var(--text-primary)",
-                    outline: "none"
-                  }}
-                  value={customTarget}
-                  onChange={(e) => setCustomTarget(e.target.value)}
-                  disabled={bgTaskActive}
-                />
-              </div>
-            )}
-          </div>
 
           <div className="scanner-controls-box">
             <button 
@@ -578,7 +506,7 @@ function Home() {
         </div>
 
         {/* PANEL 3: NETWORK SWITCHER / SELECTOR DE REDES (MEDIUM CARD) */}
-        <div className="bento-card bento-switcher slide-up" style={{ animationDelay: "0.1s" }}>
+        <div className="bento-card bento-switcher slide-up" style={{ animationDelay: "0.1s", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div className="bento-badge switcher-badge">🔄 INTERCAMBIADOR DE RED</div>
           <h3 className="bento-card-title-sm">Redes y Escaneos</h3>
           <p className="bento-card-desc-sm">
@@ -630,39 +558,26 @@ function Home() {
           </div>
 
           {switcherTab === "history" ? (
-            <div className="network-switcher-list" style={{ maxHeight: "280px", overflowY: "auto" }}>
-              {historyList.length > 0 ? (
-                historyList.map((scan, i) => (
-                  <div 
-                    key={i} 
-                    className="network-switcher-item"
-                    onClick={() => navigate(`/history/${scan.scan_id}`, { state: { defaultView: "arbol" } })}
-                  >
-                    <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span className="network-network-icon" style={{ fontSize: '20px' }}>🌐</span>
-                      <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="network-item-name">Red {scan.target_ip || "Auto"}</span>
-                        <span className="network-item-meta">{scan.created_at?.split("T")[0] || "Fecha N/A"}</span>
-                      </div>
+            <div className="network-switcher-list" style={{ overflowY: "auto", flex: 1 }}>
+              {(() => {
+                const realScans = historyList.filter(s => s.target_ip && s.target_ip.trim() !== "");
+                return realScans.length > 0 ? (
+                  realScans.map((scan, i) => (
+                    <div
+                      key={i}
+                      className="network-switcher-item"
+                      onClick={() => navigate(`/history/${scan.scan_id}`, { state: { defaultView: "arbol" } })}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                    >
+                      <span className="network-network-icon" style={{ fontSize: '18px' }}>🌐</span>
+                      <span className="network-item-name">{scan.target_ip}</span>
                     </div>
-                    <div className="network-badges" style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                      <span className="network-badge-devices" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                        👥 {scan.devices_found || 0}
-                      </span>
-                      <span className="network-badge-cves" style={{ background: 'rgba(255,51,102,0.1)', color: 'var(--accent-red)', padding: '2px 6px', borderRadius: '4px' }}>
-                        🛡️ {scan.vulnerabilidades_found || 0}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="network-switcher-placeholder">
-                  No hay escaneos anteriores en la base de datos.
-                </div>
-              )}
+                  ))
+                ) : null;
+              })()}
             </div>
           ) : (
-            <div className="network-switcher-list" style={{ maxHeight: "280px", overflowY: "auto" }}>
+            <div className="network-switcher-list" style={{ overflowY: "auto", flex: 1 }}>
               {scanningWifi ? (
                 <div style={{ padding: "30px 10px", textAlign: "center" }}>
                   <div className="bento-spinner-sm" style={{ margin: "0 auto 12px" }} />
@@ -670,27 +585,38 @@ function Home() {
                 </div>
               ) : (
                 <>
-                  {wifiNetworks.map((net, i) => (
-                    <div 
-                      key={i} 
-                      className="network-switcher-item"
-                      onClick={() => setSelectedWifi(net)}
-                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                    >
-                      <div className="network-item-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span className="network-network-icon" style={{ fontSize: '20px' }}>📶</span>
-                        <div className="network-details" style={{ display: 'flex', flexDirection: 'column' }}>
+                  {wifiNetworks.map((net, i) => {
+                    // Calcular nivel de señal: 0-4 barras
+                    const sig = net.signal || 0;
+                    const bars = sig >= 80 ? 4 : sig >= 60 ? 3 : sig >= 40 ? 2 : sig >= 20 ? 1 : 0;
+                    return (
+                      <div 
+                        key={i} 
+                        className="network-switcher-item"
+                        onClick={() => setSelectedWifi(net)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span className="network-network-icon" style={{ fontSize: '20px' }}>📶</span>
                           <span className="network-item-name">{net.ssid}</span>
-                          <span className="network-item-meta" style={{ fontSize: "10px" }}>{net.auth}</span>
+                        </div>
+                        {/* Barras de señal */}
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '16px', marginRight: '4px' }}>
+                          {[1,2,3,4].map(b => (
+                            <div key={b} style={{
+                              width: '4px',
+                              height: `${4 + b * 3}px`,
+                              borderRadius: '1px',
+                              background: b <= bars
+                                ? (bars >= 4 ? 'var(--green-400)' : bars >= 3 ? 'var(--cyan-400)' : bars >= 2 ? 'var(--yellow-400)' : 'var(--accent-red)')
+                                : 'rgba(255,255,255,0.12)',
+                              transition: 'background 0.3s'
+                            }} />
+                          ))}
                         </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontSize: "11px", fontWeight: "600", color: net.signal >= 75 ? "var(--green-400)" : net.signal >= 50 ? "var(--yellow-400)" : "var(--red-400)" }}>
-                          {net.signal}%
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {wifiNetworks.length === 0 && (
                     <div className="network-switcher-placeholder">
                       No se encontraron redes Wi-Fi visibles.
@@ -710,29 +636,29 @@ function Home() {
         </div>
 
         {/* PANEL 4: ESCANEO PASIVO EXPLICATIVO (MEDIUM CARD) */}
-        <div className="bento-card bento-passive-info slide-up" style={{ animationDelay: "0.15s" }}>
+        <div className="bento-card bento-passive-info slide-up" style={{ animationDelay: "0.15s", padding: "20px" }}>
           <div className="bento-badge passive-badge">🤫 ESCANEO PASIVO</div>
-          <h3 className="bento-card-title-sm">¿Cómo funciona?</h3>
-          <p className="bento-card-desc-sm" style={{ marginBottom: "16px" }}>
-            El escaneo pasivo es **100% silencioso e indetectable** para sistemas de detección de intrusos (IDS) corporativos.
+          <h3 className="bento-card-title-sm" style={{ fontSize: "15px" }}>¿Cómo funciona?</h3>
+          <p className="bento-card-desc-sm" style={{ marginBottom: "12px", fontSize: "12px", lineHeight: "1.4" }}>
+            El escaneo pasivo es **silencioso e indetectable** para sistemas de seguridad (IDS).
           </p>
-          <ul className="passive-info-list">
-            <li className="passive-info-item">
-              <span>🔒</span>
+          <ul className="passive-info-list" style={{ gap: "10px" }}>
+            <li className="passive-info-item" style={{ fontSize: "12px" }}>
+              <span style={{ fontSize: "14px" }}>🔒</span>
               <div>
-                <strong>Cero Inyección de Paquetes:</strong> No envía pings sweep ni escanea puertos de forma agresiva.
+                <strong>Sin Inyección:</strong> No envía paquetes ni escanea puertos de forma activa.
               </div>
             </li>
-            <li className="passive-info-item">
-              <span>📝</span>
+            <li className="passive-info-item" style={{ fontSize: "12px" }}>
+              <span style={{ fontSize: "14px" }}>📝</span>
               <div>
-                <strong>Caché ARP Local:</strong> Lee la tabla de traducción de direcciones IP/MAC ya almacenada en tu sistema.
+                <strong>Caché ARP:</strong> Lee la tabla local de direcciones IP/MAC del sistema.
               </div>
             </li>
-            <li className="passive-info-item">
-              <span>⚡</span>
+            <li className="passive-info-item" style={{ fontSize: "12px" }}>
+              <span style={{ fontSize: "14px" }}>⚡</span>
               <div>
-                <strong>Máxima Velocidad:</strong> Completa el mapa y registra los equipos en menos de 2 segundos.
+                <strong>Veloz:</strong> Completa el mapa y registra los equipos en menos de 2s.
               </div>
             </li>
           </ul>

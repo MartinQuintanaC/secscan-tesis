@@ -98,3 +98,35 @@ SecScan es como un detective que no se rinde fácil. Si el primer método falla,
 
 ### ¿Por qué algunos aparecen como "👻 Dispositivo Oculto"?
 Los celulares modernos (iPhone, Android) son muy celosos de su privacidad. Por diseño, **no responden** a ninguna de esas preguntas. Es como un vecino que no tiene su nombre en el timbre y no abre la puerta aunque toques. Eso no es un error de SecScan, es una limitación del protocolo que el sistema detecta correctamente y lo muestra con honestidad.
+
+## 6️⃣ Resumen rápido para Martin
+
+- **Qué usamos:** React (UI), FastAPI (API), Python `threading.local` (logs por hilo), Firestore (almacenamiento), Nmap + SNMP (+ opcional Scapy). 
+- **Por qué:** Cada herramienta aporta la pieza que el proyecto necesita (UI ágil, API rápida, escaneo fiable, logs en tiempo real). 
+- **Cómo funciona:** El frontend inicia el escaneo → backend lo ejecuta en background y escribe logs en Firestore → el frontend los muestra en la consola y en un árbol visual. 
+- **Conceptos claves:** Scapy = crear paquetes manualmente; Scan ID = identificador único que separa los logs; `thread_local` = guarda el callback de log por hilo.
+
+---
+
+## 7️⃣ Mejoras de Maquetación y Bento Grid (Sprint de Estabilización Visual)
+
+En los últimos desarrollos, optimizamos la visualización del panel de control mediante técnicas avanzadas de maquetación CSS Grid y Flexbox:
+
+*   **Distribución del Bento Grid**: Reubicamos los paneles de forma simétrica:
+    *   **Escanear Objetivo**: Se posicionó en la parte inferior izquierda (debajo de Lanzar Auditoría).
+    *   **Escaneo Pasivo**: Se ubicó en la parte inferior central (debajo de Redes y Escaneos), siendo más compacto y acotado.
+    *   **Consola de Auditoría**: Ocupa la columna derecha de forma completa (abarcando las dos filas superiores).
+*   **Prevención de Estiramiento de Tarjetas (Alturas Simétricas)**:
+    *   Para evitar que las tarjetas se estiren de manera asimétrica al cargar datos (por ejemplo, al mostrar la lista de redes Wi-Fi), definimos alturas de cuadrícula fijas en la vista de escritorio:
+        *   Fila Superior (`Lanzar Auditoría` y `Redes y Escaneos`): **400px** de altura.
+        *   Fila Inferior (`Escanear Objetivo` y `Escaneo Pasivo`): **240px** de altura.
+        *   Consola (`bento-terminal`): **656px** (suma de las dos filas + 16px de separación).
+*   **Scroll Flexbox Dinámico**:
+    *   Se eliminaron las alturas máximas en pixeles del cuerpo del terminal y las listas de redes del intercambiador, sustituyéndolas por `flex: 1` y `overflow-y: auto`.
+    *   Esto permite que los contenedores llenen el espacio exacto disponible dentro de la tarjeta y generen scroll de forma automática en lugar de empujar la interfaz hacia abajo o dejar huecos grises vacíos.
+*   **Adaptabilidad Responsiva**:
+    *   En dispositivos móviles y tablets (`<1250px`), las alturas fijas se desactivan automáticamente (`height: auto !important`) para permitir un apilamiento vertical y fluido del contenido.
+
+---
+
+> **Nota:** Este archivo `explicacion_para_martin.md` está guardado en el directorio raíz del proyecto y está listo para ser revisado o exportado a PDF.

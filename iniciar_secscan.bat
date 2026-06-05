@@ -1,7 +1,14 @@
 @echo off
 title SecScan Launcher
+
+:: Obtener la ruta absoluta donde se encuentra este .bat
+set "RAIZ=%~dp0"
+:: Eliminar la barra final si existe
+if "%RAIZ:~-1%"=="\" set "RAIZ=%RAIZ:~0,-1%"
+
 echo ==========================================
 echo   INICIANDO SERVICIOS DE SECSCAN
+echo   Ruta: %RAIZ%
 echo ==========================================
 echo.
 
@@ -9,13 +16,13 @@ echo.
 echo [+] Iniciando Orquestador (n8n)...
 start "SecScan - n8n" cmd /k "npx n8n"
 
-:: 2. Iniciar Backend con su entorno virtual
+:: 2. Iniciar Backend con su entorno virtual (ruta absoluta)
 echo [+] Iniciando Backend (Uvicorn)...
-start "SecScan - Backend" cmd /k "cd backend && .\venv\Scripts\python.exe -m uvicorn app:app --reload"
+start "SecScan - Backend" cmd /k "cd /d "%RAIZ%\backend" && "%RAIZ%\backend\venv\Scripts\python.exe" -m uvicorn app:app --reload --host 0.0.0.0 --port 8000"
 
-:: 3. Iniciar Frontend (Vite)
+:: 3. Iniciar Frontend (Vite) (ruta absoluta)
 echo [+] Iniciando Frontend (Vite)...
-start "SecScan - Frontend" cmd /k "cd frontend && npm run dev"
+start "SecScan - Frontend" cmd /k "cd /d "%RAIZ%\frontend" && npm run dev"
 
 echo.
 echo [!] Todos los servicios lanzados con exito.

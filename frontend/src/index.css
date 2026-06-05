@@ -505,7 +505,7 @@ ul { list-style: none; padding: 0; margin: 0; }
   grid-template-rows: auto auto auto;
   grid-template-areas:
     "scan     switcher  terminal"
-    "passive  target    terminal"
+    "target   passive   terminal"
     "history  history   history ";
   gap: 16px;
 }
@@ -624,6 +624,7 @@ ul { list-style: none; padding: 0; margin: 0; }
    ============================================================ */
 .bento-large-scan {
   grid-area: scan;
+  height: 400px;
 }
 
 .scanner-controls-box {
@@ -712,6 +713,9 @@ ul { list-style: none; padding: 0; margin: 0; }
 .bento-terminal {
   grid-area: terminal;
 }
+.bento-grid .bento-terminal {
+  height: 656px;
+}
 
 .terminal-header {
   display: flex;
@@ -739,8 +743,7 @@ ul { list-style: none; padding: 0; margin: 0; }
   border: 1px solid rgba(74, 222, 128, 0.12);
   border-radius: 8px;
   padding: 14px 16px;
-  height: 280px;
-  max-height: 280px;
+  flex: 1;
   min-height: 280px;
   overflow-y: auto;
   font-family: 'Fira Code', 'Courier New', monospace;
@@ -774,6 +777,7 @@ ul { list-style: none; padding: 0; margin: 0; }
    ============================================================ */
 .bento-switcher {
   grid-area: switcher;
+  height: 400px;
 }
 
 .network-switcher-list {
@@ -845,7 +849,10 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* ============================================================
    PASSIVE INFO CARD (Panel 4)
    ============================================================ */
-.bento-passive-info { grid-area: passive; }
+.bento-passive-info {
+  grid-area: passive;
+  height: 240px;
+}
 
 .passive-info-list {
   display: flex;
@@ -867,7 +874,10 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* ============================================================
    TARGET SCAN CARD (Panel 5)
    ============================================================ */
-.bento-target { grid-area: target; }
+.bento-target {
+  grid-area: target;
+  height: 240px;
+}
 
 .quick-input-group {
   display: flex;
@@ -2147,30 +2157,28 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* ---- VIEWPORT META (reminder: add to index.html) ---- */
 
-/* ---------- LAPTOP / TABLET (≤ 1250px) ---------- */
 @media (max-width: 1250px) {
   .bento-grid {
     grid-template-columns: 1fr 1fr !important;
     grid-template-rows: auto auto auto auto !important;
     grid-template-areas:
       "scan     switcher"
-      "passive  target  "
+      "target   passive"
       "terminal terminal"
-      "history  history " !important;
+      "history  history" !important;
   }
   .bento-large-scan,
   .bento-switcher,
-  .bento-passive-info,
   .bento-target,
-  .bento-terminal,
-  .history-quicklink {
-    grid-column: auto !important;
-    grid-row: auto !important;
+  .bento-passive-info {
+    height: auto !important;
+  }
+  .bento-grid .bento-terminal {
+    height: 380px !important;
   }
   .bento-span-2-cols, .bento-span-3-cols { grid-column: span 2 !important; }
 }
 
-/* ---------- PHONE / SMALL SCREENS (≤ 850px) ---------- */
 @media (max-width: 850px) {
 
   /* — Grid: stack everything — */
@@ -2179,22 +2187,16 @@ ul { list-style: none; padding: 0; margin: 0; }
     grid-template-rows: auto auto auto auto auto auto !important;
     grid-template-areas:
       "scan"
+      "target"
       "switcher"
       "passive"
-      "target"
       "terminal"
       "history" !important;
     gap: 12px;
   }
-  .bento-large-scan,
-  .bento-terminal,
-  .bento-switcher,
-  .bento-passive-info,
-  .bento-target,
   .bento-span-2-cols,
   .bento-span-3-cols,
-  .bento-span-2-rows,
-  .history-quicklink {
+  .bento-span-2-rows {
     grid-column: auto !important;
     grid-row: auto !important;
   }
