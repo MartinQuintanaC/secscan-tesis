@@ -26,3 +26,9 @@ app.include_router(api_router, prefix="/api")
 
 # Rutas internas para n8n (sin autenticación, solo localhost)
 app.include_router(n8n_router, prefix="/internal")
+
+@app.on_event("startup")
+def startup_event():
+    from services.scan_service import start_passive_daemon
+    start_passive_daemon()
+

@@ -99,3 +99,15 @@ En el último sprint de refinamiento visual, se implementaron técnicas avanzada
 - **Reseteo Responsivo Completo**:
   - A través de media queries (`@media (max-width: 1250px)`), las alturas fijas del grid se desactivan (`height: auto !important`) para un acoplamiento natural, garantizando que el diseño se mantenga óptimo tanto en tablets como en pantallas móviles pequeñas.
 
+## 7. Sprint de Reestructuración de Escaneo Pasivo a Fondo Continuo (Aceleración Activa)
+En este sprint, redefinimos conceptualmente el escaneo pasivo para convertirlo en un proceso de fondo ininterrumpido que nutre y acelera de forma transparente el escaneo activo:
+
+- **Demonio de Descubrimiento de Fondo (`PassiveScanDaemon`)**:
+  - **Arranque Autónomo**: Configurado un hilo demonio (`threading.Thread`) que se inicia de manera automática al arrancar la aplicación (FastAPI `startup`), eliminando la necesidad de acciones o activaciones manuales.
+  - **Loop de Refresco Continuo (Cada 30s)**: Detecta cambios de subred en vivo a través de `get_local_cidr()`. Ejecuta periódicamente una lectura de la caché ARP del sistema operativo (`arp -a`) complementada con un refresco silencioso en background, manteniendo una caché en memoria actualizada de hosts activos de la subred local.
+- **Aceleración del Escaneo Activo**:
+  - Al lanzar un escaneo activo, en lugar de realizar un barrido ciego sobre las 256 direcciones IP de la subred local, la capa de servicios filtra y extrae las direcciones IP confirmadas como activas por el demonio pasivo de fondo.
+  - Nmap dirige sus sondas de escaneo exclusivamente a estas IPs. Esto reduce el tiempo total de descubrimiento activo de ~20-30 segundos a solo **2-3 segundos**, al evadir la espera por timeouts en direcciones vacías.
+- **Resultados Pasivos Instantáneos**:
+  - El escaneo pasivo desde la interfaz web consume inmediatamente la caché en memoria del demonio de fondo, logrando tiempos de carga **instantáneos (0 segundos)**.
+

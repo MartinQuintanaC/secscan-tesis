@@ -415,7 +415,7 @@ class ScannerEngine:
             self._log(f"  [DHCP] {msg}")
             return []
 
-    def _intento_nmap_fallback(self, network_range: str, parent_ip: str) -> list:
+    def _intento_nmap_fallback(self, network_range: str, parent_ip: str, active_ips: list = None) -> list:
         """
         Intento 3: ARP cache local (siempre funciona sin admin) + Nmap como complemento.
         En Windows, -PR (ARP raw socket) requiere admin y falla silenciosamente.
@@ -469,9 +469,22 @@ class ScannerEngine:
         # -sn -PE: usa ICMP echo. Funciona de manera limpia, rápida y no intrusiva sin saturar la red institucional.
         # -T3: Velocidad normal estandarizada.
         try:
-            self._log(f"  [Nmap] Complementando con ping sweep clásico ICMP (-sn -PE -T3)...")
+            if active_ips:
+                targets = [ip for ip in active_ips if ip.startswith(prefix)]
+                if parent_ip and parent_ip != "unknown" and parent_ip not in targets and parent_ip.startswith(prefix):
+                    targets.append(parent_ip)
+                if targets:
+                    hosts_arg = " ".join(targets)
+                    self._log(f"  [Nmap] Acelerando escaneo activo usando caché del demonio pasivo ({len(targets)} IPs)...")
+                else:
+                    hosts_arg = network_range
+                    self._log(f"  [Nmap] No se encontraron IPs en caché para esta subred. Barriendo rango completo...")
+            else:
+                hosts_arg = network_range
+                self._log(f"  [Nmap] Complementando con ping sweep clásico ICMP (-sn -PE -T3)...")
+
             self.nm.scan(
-                hosts=network_range, 
+                hosts=hosts_arg, 
                 arguments='-sn -PE -T3'
             )
 
@@ -514,7 +527,8 @@ class ScannerEngine:
 
     def discover_network(self, network_range: str,
                          router_principal_ip: str = None,
-                         advertencias: list = None) -> list:
+                         advertencias: list = None,
+                         active_ips: list = None) -> list:
         """
         FASE 2: Cascada de descubrimiento de dispositivos.
         Orden: SNMP (router principal) → SNMP (servidor DHCP) → Nmap fallback.
@@ -559,7 +573,7 @@ class ScannerEngine:
 
         # ── Intento 3: Nmap ping sweep híbrido (fallback local garantizado) ────
         advertencias.append("SNMP y DHCP fallaron — usando descubrimiento híbrido Nmap como último recurso.")
-        return self._intento_nmap_fallback(network_range, parent_ip)
+        return self._intento_nmap_fallback(network_range, parent_ip, active_ips=active_ips)
 
 
     def scan_ports(self, ip_target: str) -> dict:
