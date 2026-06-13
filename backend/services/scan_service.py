@@ -15,6 +15,9 @@ _last_subnet = None
 _daemon_started = False
 _daemon_lock = threading.Lock()
 
+# Bandera para pausar el daemon mientras un escaneo activo está en curso
+_active_scan_running = False
+
 def start_passive_daemon():
     """Inicializa de forma segura el hilo del demonio en segundo plano."""
     global _daemon_started
@@ -35,6 +38,12 @@ def run_passive_background_worker():
     time.sleep(2)
     
     while True:
+        # --- Pausa cortés: esperar si hay un escaneo activo en curso ---
+        if _active_scan_running:
+            print("[PassiveScanDaemon] Escaneo activo en curso. Ciclo pasivo en pausa (reintentando en 5s)...")
+            time.sleep(5)
+            continue
+
         try:
             current_cidr = get_local_cidr()
             if not current_cidr:
@@ -200,34 +209,44 @@ class ScanService:
             return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology, "passive": True}
 
         # Escaneo Activo
+        global _active_scan_running
+
         # Obtener IPs activas de la caché del demonio pasivo de fondo si aplica a la subred local
         active_ips = None
         if (ip_real == _last_subnet or ip_limpia.lower() == "auto" or ip_limpia == "") and _passive_device_cache:
             active_ips = list(_passive_device_cache.keys())
+            self._log(f"⚡ [DAEMON] Caché pasiva lista con {len(active_ips)} IPs — pausando daemon durante el escaneo activo.")
 
-        # Fase 1: Descubrir esqueleto de red con Traceroute
-        topology = self.scanner.fase1_traceroute()
-        advertencias = topology.get("advertencias", [])
+        # Señalizar al daemon que pause sus ciclos
+        _active_scan_running = True
+        try:
+            # Fase 1: Descubrir esqueleto de red con Traceroute
+            topology = self.scanner.fase1_traceroute()
+            advertencias = topology.get("advertencias", [])
 
-        # Extraer la IP real del Router Principal (puede ser "unknown" en redes blindadas)
-        router_principal_ip = None
-        for hop in topology.get("hops_privados", []):
-            if hop.get("tipo") == "router_principal" and hop.get("ip") != "unknown":
-                router_principal_ip = hop["ip"]
-                break
+            # Extraer la IP real del Router Principal (puede ser "unknown" en redes blindadas)
+            router_principal_ip = None
+            for hop in topology.get("hops_privados", []):
+                if hop.get("tipo") == "router_principal" and hop.get("ip") != "unknown":
+                    router_principal_ip = hop["ip"]
+                    break
 
-        # Fase 2: Cascada SNMP → DHCP → Nmap fallback (Acelerado por caché)
-        dispositivos = self.scanner.discover_network(
-            ip_real,
-            router_principal_ip=router_principal_ip,
-            advertencias=advertencias,
-            active_ips=active_ips
-        )
+            # Fase 2: Cascada SNMP → DHCP → Nmap fallback (Acelerado por caché)
+            dispositivos = self.scanner.discover_network(
+                ip_real,
+                router_principal_ip=router_principal_ip,
+                advertencias=advertencias,
+                active_ips=active_ips
+            )
 
-        topology["advertencias"] = advertencias
-        topology["devices"] = dispositivos
+            topology["advertencias"] = advertencias
+            topology["devices"] = dispositivos
 
-        return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology}
+            return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology}
+        finally:
+            # Siempre liberar el daemon al terminar, incluso si hubo error
+            _active_scan_running = False
+            print("[PassiveScanDaemon] Escaneo activo finalizado. Reanudando ciclos de fondo.")
 
 
 
