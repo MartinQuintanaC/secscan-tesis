@@ -3,6 +3,7 @@ import subprocess
 import socket
 import re
 import ipaddress
+import time
 
 import threading
 _thread_local = threading.local()
@@ -109,6 +110,7 @@ class ScannerEngine:
             - router_isp: Primer salto con IP pública (Internet).
         """
         self._log("[FASE 1] Iniciando Nmap Traceroute hacia 8.8.8.8 para descubrir la columna vertebral...")
+        _t_fase1 = time.perf_counter()
         hops_privados = []
         router_isp = None
         advertencias = []
@@ -225,6 +227,8 @@ class ScannerEngine:
             hops_privados[-1]["hostname"] = "Router Principal (C)"
             hops_privados[-1]["tipo"] = "router_principal"
             
+        _elapsed_fase1 = time.perf_counter() - _t_fase1
+        self._log(f"[FASE 1] ✅ Completada en {_elapsed_fase1:.2f}s")
         return {
             "hops_privados": hops_privados,
             "router_isp": router_isp,
@@ -282,6 +286,7 @@ class ScannerEngine:
         Timeout estricto de 3 s; si no responde, añade advertencia y retorna [].
         """
         self._log(f"  [Fase 2 - Intento 1] SNMP Nativo (pysnmp) sobre {target_ip}...")
+        _t_snmp = time.perf_counter()
         
         try:
             from pysnmp.hlapi import (
@@ -361,7 +366,7 @@ class ScannerEngine:
                 
         msg = f"SNMP sin respuesta o bloqueado en {target_ip} con comunidades comunes."
         advertencias.append(msg)
-        self._log(f"  [SNMP] {msg}")
+        self._log(f"  [SNMP] {msg} ({time.perf_counter() - _t_snmp:.2f}s)")
         return []
 
     def _intento_dhcp_server(self, network_range: str, advertencias: list) -> list:
@@ -370,6 +375,7 @@ class ScannerEngine:
         Timeout: 10 s para el barrido DHCP + 10 s para el SNMP.
         """
         self._log(f"  [Fase 2 - Intento 2] Buscando servidor DHCP en {network_range}...")
+        _t_dhcp = time.perf_counter()
         try:
             dhcp_result = subprocess.run(
                 ['nmap', '-sU', '-p', '67', '-T2', network_range],
@@ -407,7 +413,7 @@ class ScannerEngine:
         except subprocess.TimeoutExpired:
             msg = f"Timeout buscando servidor DHCP en {network_range}."
             advertencias.append(msg)
-            self._log(f"  [DHCP] {msg}")
+            self._log(f"  [DHCP] {msg} ({time.perf_counter() - _t_dhcp:.2f}s)")
             return []
         except Exception as e:
             msg = f"Error buscando servidor DHCP: {e}"
@@ -422,6 +428,7 @@ class ScannerEngine:
         Por eso el ARP cache es la fuente primaria y Nmap el complemento.
         """
         self._log(f"  [Fase 2 - Intento 3] Fallback ARP Cache + Nmap en {network_range}...")
+        _t_nmap = time.perf_counter()
 
         discovered = []
         found_ips  = set()
@@ -521,7 +528,7 @@ class ScannerEngine:
                 "parent_ip": parent_ip
             })
 
-        self._log(f"  [Fase 2] Total dispositivos descubiertos: {len(discovered)}")
+        self._log(f"  [Fase 2 - Intento 3] ✅ Completado en {time.perf_counter() - _t_nmap:.2f}s | Total dispositivos descubiertos: {len(discovered)}")
         return discovered
 
 
@@ -540,6 +547,7 @@ class ScannerEngine:
         parent_ip = router_principal_ip or network_range.split('/')[0]
 
         self._log(f"[FASE 2] Iniciando descubrimiento en cascada. Red: {network_range} | Router: {parent_ip}")
+        _t_fase2 = time.perf_counter()
 
         # ── Intento 1: SNMP sobre el router principal ──────────────────────────
         snmp_exitosa = False
@@ -573,7 +581,9 @@ class ScannerEngine:
 
         # ── Intento 3: Nmap ping sweep híbrido (fallback local garantizado) ────
         advertencias.append("SNMP y DHCP fallaron — usando descubrimiento híbrido Nmap como último recurso.")
-        return self._intento_nmap_fallback(network_range, parent_ip, active_ips=active_ips)
+        result = self._intento_nmap_fallback(network_range, parent_ip, active_ips=active_ips)
+        self._log(f"[FASE 2] ✅ Completada en {time.perf_counter() - _t_fase2:.2f}s")
+        return result
 
 
     def scan_ports(self, ip_target: str) -> dict:
@@ -581,6 +591,7 @@ class ScannerEngine:
         Escaneo profundo (Opción A): Busca puertos abiertos y descubre qué programas corren adentro.
         """
         self._log(f"Iniciando escaneo profundo en: {ip_target}...")
+        _t_deep = time.perf_counter()
         
         # -sV: descubrir la versión exacta del servicio.
         # -T3: velocidad normal, equilibrio entre rapidez y evasión de bloqueos.
@@ -644,6 +655,8 @@ class ScannerEngine:
             except Exception:
                 pass
             
+        _elapsed_deep = time.perf_counter() - _t_deep
+        self._log(f"[DEEP-SCAN] ✅ {ip_target} completado en {_elapsed_deep:.2f}s | Puertos abiertos: {len(puertos_descubiertos)}")
         return {
             "ip": ip_target,
             "mac": mac,
