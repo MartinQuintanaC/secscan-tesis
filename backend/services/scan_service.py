@@ -157,8 +157,8 @@ class ScanService:
         self.scanner = ScannerEngine()
         self.cve_client = CVEClient()
         self.db_service = DatabaseService()
-        # Inicialización de seguridad si no se gatilló desde app.py
-        start_passive_daemon()
+        # El daemon pasivo ahora se arranca únicamente en app.py (evento startup de FastAPI)
+        # para evitar duplicaciones/conflictos en procesos secundarios de Uvicorn.
 
     def set_log_cb(self, cb):
         from core.scanner import _thread_local
@@ -388,6 +388,11 @@ class ScanService:
             if es_ultimo_deep:
                 elapsed_deep = time.perf_counter() - deep_start
                 self._log(f"[DEEP-SCAN TOTAL] ✅ Todos los dispositivos escaneados en {elapsed_deep:.2f}s")
+                if scan_id and user_id:
+                    self.db_service.update_scan_metadata(user_id, scan_id, {
+                        "end_time": datetime.datetime.utcnow().isoformat(),
+                        "status": "completed"
+                    })
                 
             if restantes == 0:
                 print("[PassiveScanDaemon] Todos los deep-scans finalizados. Reanudando ciclos de fondo.")
