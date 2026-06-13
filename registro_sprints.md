@@ -86,3 +86,15 @@ Este documento registra los hitos arquitectónicos alcanzados en la plataforma, 
 ### 📌 Hallazgo Técnico Documentado (Sprint 5)
 > **"La calidad de la inteligencia de vulnerabilidades depende directamente de la precisión del fingerprinting de Nmap."**
 > Cuando Nmap logra extraer el nombre y versión exactos del software (ej: `apache 2.4.49`), el cruce con el NVD es quirúrgico y devuelve CVEs precisos con severidad CRÍTICA real. Sin embargo, cuando Nmap solo detecta un nombre genérico (ej: `http 2.0`), los resultados del NVD son "ruido" — CVEs antiguos e irrelevantes de servidores HTTP diversos que coinciden textualmente pero no pertenecen al software real del equipo auditado. Este hallazgo es vital para la interpretación de resultados en ambientes de producción.
+
+---
+
+## ⏳ Sprint 13: Rendimiento, Estabilidad y Escaneo Pasivo Continuo (Performance & Stability)
+**Objetivo:** Reducir a cero el tiempo de respuesta de los escaneos pasivos mediante caché persistente, acelerar el escaneo activo enfocando a Nmap únicamente en dispositivos vivos y garantizar la estabilidad en la concurrencia de escaneos y persistencia de estado.
+
+* **[x] Demonio de Escaneo Pasivo Continuo:** Implementación de un daemon persistente (`Thread` en background) que refresca la caché ARP local cada 30 segundos y detecta cambios dinámicos de subred. *(Completado)*
+* **[x] Aceleración de Escaneo Activo:** Consumo de la caché de IPs del daemon para dirigir el escaneo de Nmap, bajando los tiempos de descubrimiento en la subred local de ~20-30s a solo 2-3s. *(Completado)*
+* **[x] Control de Concurrencia y Ventanas de Gracia:** Pausado inteligente del daemon durante escaneos activos con una ventana de gracia de 8 segundos para evitar arranques solapados. *(Completado)*
+* **[x] Temporizadores de Auditoría por Fase:** Medición e impresión precisa del tiempo de ejecución de cada fase (Traceroute, Descubrimiento SNMP/DHCP/Nmap y Deep-Scans globales). *(Completado)*
+* **[x] Sincronización Estricta de Completado:** Marcación atómica del estado `completed` en Firestore directamente desde el backend para evitar desfases en el frontend. *(Completado)*
+* **[/] Optimización de Argumentos Deep-Scan (Nmap):** Configuración de `--version-intensity 2`, plantilla `-T4` y `--host-timeout 45s` para mitigar bloqueos por puertos lentos o filtrados. *(En Proceso / Esperando aprobación)*
