@@ -331,7 +331,7 @@ function Home() {
               }
 
               // Condición de éxito: el backend marca status como 'completed'
-              if (status === "completed" || (devices_found >= total_targets && total_targets > 0 && polls >= 3)) {
+              if (status === "completed") {
                 clearInterval(checkResults);
                 setScanning(false);
                 setBgTaskActive(false);

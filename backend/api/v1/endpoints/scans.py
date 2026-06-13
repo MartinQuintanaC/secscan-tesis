@@ -173,21 +173,22 @@ def trigger_scan(request: ScanRequest, background_tasks: BackgroundTasks, author
     }
     
     n8n_disponible = False
-    url_prod = "http://localhost:5678/webhook/secscan"
-    url_test = "http://localhost:5678/webhook-test/secscan"
-    
-    try:
-        resp = requests.post(url_prod, json=payload, timeout=2)
-        if resp.status_code == 200:
-            n8n_disponible = True
-    except: pass
-            
-    if not n8n_disponible:
+    if not request.passive:
+        url_prod = "http://localhost:5678/webhook/secscan"
+        url_test = "http://localhost:5678/webhook-test/secscan"
+        
         try:
-            resp = requests.post(url_test, json=payload, timeout=2)
+            resp = requests.post(url_prod, json=payload, timeout=2)
             if resp.status_code == 200:
                 n8n_disponible = True
         except: pass
+                
+        if not n8n_disponible:
+            try:
+                resp = requests.post(url_test, json=payload, timeout=2)
+                if resp.status_code == 200:
+                    n8n_disponible = True
+            except: pass
     
     if n8n_disponible:
         return {

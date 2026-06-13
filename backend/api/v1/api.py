@@ -100,13 +100,16 @@ def n8n_discover(request: dict):
     
     if scan_id:
         _db_service.mark_scan_processed(uid_real, scan_id, "discover")
+        estado_final = "completed" if len(dispositivos) == 0 else "processing"
         _db_service.update_scan_metadata(uid_real, scan_id, {
             "devices_found": 0,
             "total_targets": len(dispositivos),
             "vulnerabilidades_found": 0,
-            "status": "processing",
+            "status": estado_final,
             "topology": result.get("topology", {})
         })
+        if len(dispositivos) == 0:
+            _db_service.append_scan_log(uid_real, scan_id, "⚠️ No se detectaron dispositivos activos. Escaneo finalizado.")
     
     return {
         "status": "ok", 
