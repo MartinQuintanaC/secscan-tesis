@@ -19,6 +19,12 @@ _daemon_lock = threading.Lock()
 # El daemon pausa mientras sea > 0. Contador thread-safe.
 _active_scan_count = 0
 _active_scan_count_lock = threading.Lock()
+_last_active_time = 0.0
+
+# Seguimiento de la duración de la fase deep-scan
+_deep_scan_active_count = 0
+_deep_scan_start_time = 0.0
+_deep_scan_lock = threading.Lock()
 
 def start_passive_daemon():
     """Inicializa de forma segura el hilo del demonio en segundo plano."""
@@ -35,18 +41,29 @@ def start_passive_daemon():
 def run_passive_background_worker():
     """Ciclo en segundo plano del demonio pasivo."""
     global _last_subnet, _passive_device_cache
+    global _active_scan_count, _active_scan_count_lock, _last_active_time
     
     # Espera inicial para la estabilización de interfaces de red
     time.sleep(2)
     
+    _paused_logged = False
     while True:
         # --- Pausa cortés: esperar si hay cualquier escaneo (discover o deep) en curso ---
         with _active_scan_count_lock:
-            hay_escaneo_activo = _active_scan_count > 0
+            if _active_scan_count > 0:
+                _last_active_time = time.time()
+            hay_escaneo_activo = (_active_scan_count > 0) or (time.time() - _last_active_time < 8.0)
+            
         if hay_escaneo_activo:
-            print("[PassiveScanDaemon] Escaneo activo en curso. Ciclo pasivo en pausa (reintentando en 5s)...")
-            time.sleep(5)
+            if not _paused_logged:
+                print("[PassiveScanDaemon] Escaneo activo en curso. Ciclo pasivo en pausa.")
+                _paused_logged = True
+            time.sleep(2)
             continue
+            
+        if _paused_logged:
+            print("[PassiveScanDaemon] Escaneo activo finalizado. Reanudando ciclos pasivos en segundo plano.")
+            _paused_logged = False
 
         try:
             current_cidr = get_local_cidr()
@@ -213,7 +230,7 @@ class ScanService:
             return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology, "passive": True}
 
         # Escaneo Activo
-        global _active_scan_count, _active_scan_count_lock
+        global _active_scan_count, _active_scan_count_lock, _last_active_time
 
         # Obtener IPs activas de la caché del demonio pasivo de fondo si aplica a la subred local
         active_ips = None
@@ -224,6 +241,7 @@ class ScanService:
         # Incrementar contador → daemon se pausa
         with _active_scan_count_lock:
             _active_scan_count += 1
+            _last_active_time = time.time()
         try:
             # Fase 1: Descubrir esqueleto de red con Traceroute
             topology = self.scanner.fase1_traceroute()
@@ -252,6 +270,7 @@ class ScanService:
             # Decrementar contador → daemon reanuda cuando llegue a 0
             with _active_scan_count_lock:
                 _active_scan_count -= 1
+                _last_active_time = time.time()
                 restantes = _active_scan_count
             if restantes == 0:
                 print("[PassiveScanDaemon] Fase discover finalizada. Reanudando ciclos de fondo si no hay deep-scans pendientes.")
@@ -260,10 +279,18 @@ class ScanService:
 
 
     def deep_scan(self, ip: str, user_id: str = "", scan_id: str = ""):
-        global _active_scan_count, _active_scan_count_lock
+        global _active_scan_count, _active_scan_count_lock, _last_active_time
+        global _deep_scan_active_count, _deep_scan_start_time, _deep_scan_lock
+        
         # Incrementar contador: el daemon no cicla mientras haya deep-scans corriendo
         with _active_scan_count_lock:
             _active_scan_count += 1
+            _last_active_time = time.time()
+            
+        with _deep_scan_lock:
+            _deep_scan_active_count += 1
+            if _deep_scan_active_count == 1:
+                _deep_scan_start_time = time.perf_counter()
         try:
             self._log(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")
             puertos_info = self.scanner.scan_ports(ip)
@@ -350,6 +377,17 @@ class ScanService:
             # Decrementar contador → daemon reanuda solo cuando TODOS los deep-scans terminen
             with _active_scan_count_lock:
                 _active_scan_count -= 1
+                _last_active_time = time.time()
                 restantes = _active_scan_count
+                
+            with _deep_scan_lock:
+                _deep_scan_active_count -= 1
+                es_ultimo_deep = (_deep_scan_active_count == 0)
+                deep_start = _deep_scan_start_time
+                
+            if es_ultimo_deep:
+                elapsed_deep = time.perf_counter() - deep_start
+                self._log(f"[DEEP-SCAN TOTAL] ✅ Todos los dispositivos escaneados en {elapsed_deep:.2f}s")
+                
             if restantes == 0:
                 print("[PassiveScanDaemon] Todos los deep-scans finalizados. Reanudando ciclos de fondo.")
