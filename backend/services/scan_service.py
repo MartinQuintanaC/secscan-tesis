@@ -15,8 +15,10 @@ _last_subnet = None
 _daemon_started = False
 _daemon_lock = threading.Lock()
 
-# Bandera para pausar el daemon mientras un escaneo activo está en curso
-_active_scan_running = False
+# Contador de escaneos activos en curso (discover + deep-scan)
+# El daemon pausa mientras sea > 0. Contador thread-safe.
+_active_scan_count = 0
+_active_scan_count_lock = threading.Lock()
 
 def start_passive_daemon():
     """Inicializa de forma segura el hilo del demonio en segundo plano."""
@@ -38,8 +40,10 @@ def run_passive_background_worker():
     time.sleep(2)
     
     while True:
-        # --- Pausa cortés: esperar si hay un escaneo activo en curso ---
-        if _active_scan_running:
+        # --- Pausa cortés: esperar si hay cualquier escaneo (discover o deep) en curso ---
+        with _active_scan_count_lock:
+            hay_escaneo_activo = _active_scan_count > 0
+        if hay_escaneo_activo:
             print("[PassiveScanDaemon] Escaneo activo en curso. Ciclo pasivo en pausa (reintentando en 5s)...")
             time.sleep(5)
             continue
@@ -209,7 +213,7 @@ class ScanService:
             return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology, "passive": True}
 
         # Escaneo Activo
-        global _active_scan_running
+        global _active_scan_count, _active_scan_count_lock
 
         # Obtener IPs activas de la caché del demonio pasivo de fondo si aplica a la subred local
         active_ips = None
@@ -217,8 +221,9 @@ class ScanService:
             active_ips = list(_passive_device_cache.keys())
             self._log(f"⚡ [DAEMON] Caché pasiva lista con {len(active_ips)} IPs — pausando daemon durante el escaneo activo.")
 
-        # Señalizar al daemon que pause sus ciclos
-        _active_scan_running = True
+        # Incrementar contador → daemon se pausa
+        with _active_scan_count_lock:
+            _active_scan_count += 1
         try:
             # Fase 1: Descubrir esqueleto de red con Traceroute
             topology = self.scanner.fase1_traceroute()
@@ -244,93 +249,107 @@ class ScanService:
 
             return {"status": "ok", "dispositivos": dispositivos, "target": ip_real, "topology": topology}
         finally:
-            # Siempre liberar el daemon al terminar, incluso si hubo error
-            _active_scan_running = False
-            print("[PassiveScanDaemon] Escaneo activo finalizado. Reanudando ciclos de fondo.")
+            # Decrementar contador → daemon reanuda cuando llegue a 0
+            with _active_scan_count_lock:
+                _active_scan_count -= 1
+                restantes = _active_scan_count
+            if restantes == 0:
+                print("[PassiveScanDaemon] Fase discover finalizada. Reanudando ciclos de fondo si no hay deep-scans pendientes.")
 
 
 
 
     def deep_scan(self, ip: str, user_id: str = "", scan_id: str = ""):
-        self._log(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")
-
-        puertos_info = self.scanner.scan_ports(ip)
-        puertos = puertos_info.get("puertos_abiertos", [])
-        
-        total_vulnerabilidades = 0
-        for puerto in puertos:
-            servicio = puerto.get("servicio", "")
-            version = puerto.get("version", "")
+        global _active_scan_count, _active_scan_count_lock
+        # Incrementar contador: el daemon no cicla mientras haya deep-scans corriendo
+        with _active_scan_count_lock:
+            _active_scan_count += 1
+        try:
+            self._log(f"====== INICIANDO ESCANEO PARA: {ip} (user: {user_id}, scan: {scan_id}) ======")
+            puertos_info = self.scanner.scan_ports(ip)
+            puertos = puertos_info.get("puertos_abiertos", [])
             
-            if version and version.strip() != "":
-                cves = self.cve_client.buscar_vulnerabilidades(servicio, version)
-                puerto["vulnerabilidades"] = cves
-                total_vulnerabilidades += len(cves)
-            else:
-                puerto["vulnerabilidades"] = []
-        
-        mac_real = puertos_info.get("mac", "Desconocida")
-        id_unico = mac_real if mac_real != "Desconocida" else ip
-        
-        # Lógica de Historial e Intrusos
-        doc_snap = self.db_service.get_historial_doc(id_unico, user_id)
-        hora_actual = datetime.datetime.utcnow().isoformat()
-        es_nuevo = False
-        primera_conexion = hora_actual
-        
-        if not doc_snap.exists:
-            es_nuevo = True
-            self.db_service.save_historial_doc(id_unico, {
-                "ip_inicial": ip,
-                "mac": mac_real,
-                "primera_conexion": hora_actual,
-                "fabricante": puertos_info.get("fabricante", "Desconocido")
-            }, user_id)
-        else:
-            datos_historial = doc_snap.to_dict()
-            primera_conexion = datos_historial.get("primera_conexion", hora_actual)
-            
-        # Cálculo de Riesgo Máximo
-        max_score = 0
-        for puerto in puertos:
-            for v in puerto.get("vulnerabilidades", []):
-                v_score = v.get("score", 0)
-                if v_score > max_score:
-                    max_score = v_score
-
-        documento = {
-            "ip": ip,
-            "mac": mac_real,
-            "hostname": puertos_info.get("hostname", ""),
-            "fabricante": puertos_info.get("fabricante", "Desconocido"),
-            "puertos_abiertos": puertos,
-            "total_vulnerabilidades": total_vulnerabilidades,
-            "max_score": max_score,
-            "fecha_auditoria": hora_actual,
-            "estado": "Completado",
-            "es_nuevo": es_nuevo,
-            "primera_conexion": primera_conexion,
-            "scan_id": scan_id
-        }
-        
-        # 1. Guardar en vista general del usuario
-        self.db_service.save_device(ip, documento, user_id)
-        
-        # 2. Guardar en el histórico de este escaneo específico
-        if scan_id:
-            self.db_service.save_scan_device(user_id, scan_id, ip, documento)
-        
-        if total_vulnerabilidades > 0:
-
+            total_vulnerabilidades = 0
             for puerto in puertos:
-                for cve in puerto.get("vulnerabilidades", []):
-                    self.db_service.save_vulnerability(cve["cve_id"], {
-                        **cve,
-                        "ip": ip,
-                        "puerto": puerto.get("puerto"),
-                        "servicio": puerto.get("servicio"),
-                        "version": puerto.get("version"),
-                        "fecha_deteccion": datetime.datetime.utcnow().isoformat()
-                    }, user_id)
-        
-        return documento
+                servicio = puerto.get("servicio", "")
+                version = puerto.get("version", "")
+                
+                if version and version.strip() != "":
+                    cves = self.cve_client.buscar_vulnerabilidades(servicio, version)
+                    puerto["vulnerabilidades"] = cves
+                    total_vulnerabilidades += len(cves)
+                else:
+                    puerto["vulnerabilidades"] = []
+            
+            mac_real = puertos_info.get("mac", "Desconocida")
+            id_unico = mac_real if mac_real != "Desconocida" else ip
+            
+            # Lógica de Historial e Intrusos
+            doc_snap = self.db_service.get_historial_doc(id_unico, user_id)
+            hora_actual = datetime.datetime.utcnow().isoformat()
+            es_nuevo = False
+            primera_conexion = hora_actual
+            
+            if not doc_snap.exists:
+                es_nuevo = True
+                self.db_service.save_historial_doc(id_unico, {
+                    "ip_inicial": ip,
+                    "mac": mac_real,
+                    "primera_conexion": hora_actual,
+                    "fabricante": puertos_info.get("fabricante", "Desconocido")
+                }, user_id)
+            else:
+                datos_historial = doc_snap.to_dict()
+                primera_conexion = datos_historial.get("primera_conexion", hora_actual)
+                
+            # Cálculo de Riesgo Máximo
+            max_score = 0
+            for puerto in puertos:
+                for v in puerto.get("vulnerabilidades", []):
+                    v_score = v.get("score", 0)
+                    if v_score > max_score:
+                        max_score = v_score
+
+            documento = {
+                "ip": ip,
+                "mac": mac_real,
+                "hostname": puertos_info.get("hostname", ""),
+                "fabricante": puertos_info.get("fabricante", "Desconocido"),
+                "puertos_abiertos": puertos,
+                "total_vulnerabilidades": total_vulnerabilidades,
+                "max_score": max_score,
+                "fecha_auditoria": hora_actual,
+                "estado": "Completado",
+                "es_nuevo": es_nuevo,
+                "primera_conexion": primera_conexion,
+                "scan_id": scan_id
+            }
+            
+            # 1. Guardar en vista general del usuario
+            self.db_service.save_device(ip, documento, user_id)
+            
+            # 2. Guardar en el histórico de este escaneo específico
+            if scan_id:
+                self.db_service.save_scan_device(user_id, scan_id, ip, documento)
+            
+            if total_vulnerabilidades > 0:
+                for puerto in puertos:
+                    for cve in puerto.get("vulnerabilidades", []):
+                        self.db_service.save_vulnerability(cve["cve_id"], {
+                            **cve,
+                            "ip": ip,
+                            "puerto": puerto.get("puerto"),
+                            "servicio": puerto.get("servicio"),
+                            "version": puerto.get("version"),
+                            "fecha_deteccion": datetime.datetime.utcnow().isoformat()
+                        }, user_id)
+            
+            return documento
+
+        finally:
+            # Decrementar contador → daemon reanuda solo cuando TODOS los deep-scans terminen
+            with _active_scan_count_lock:
+                _active_scan_count -= 1
+                restantes = _active_scan_count
+            if restantes == 0:
+                print("[PassiveScanDaemon] Todos los deep-scans finalizados. Reanudando ciclos de fondo.")
