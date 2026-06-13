@@ -46,6 +46,7 @@ def run_passive_background_worker():
                 _last_subnet = current_cidr
                 _passive_device_cache.clear()
             
+            print(f"[PassiveScanDaemon] Iniciando ciclo de escaneo pasivo en segundo plano en {current_cidr}...")
             prefix = current_cidr.split('/')[0].rsplit('.', 1)[0] + '.'
             
             # 1. Refresco Silencioso (Ping Sweep rápido en background para poblar ARP cache)
@@ -110,6 +111,9 @@ def run_passive_background_worker():
                 
             if new_devices:
                 _passive_device_cache = new_devices
+            
+            print(f"[PassiveScanDaemon] Ciclo de fondo finalizado. Dispositivos en caché: {len(new_devices)} | IPs: {list(new_devices.keys())}")
+
                 
         except Exception as e:
             print(f"[PassiveScanDaemon] Excepción en ciclo del worker: {e}")
